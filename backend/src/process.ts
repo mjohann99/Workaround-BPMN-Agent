@@ -1,6 +1,10 @@
 import nodeProcess from "node:process";
 
 import {
+  isFallbackLaneName
+} from "./lane-constants.js";
+
+import {
   type ProcessChanges,
   type ProcessElement,
   type ProcessElementDraft,
@@ -10,8 +14,17 @@ import {
   type WorkaroundCandidateDraft
 } from "./types.js";
 
+export type ProcessValidationDetails = {
+  kind: "unknown_lane" | "missing_lane";
+  laneRef: string;
+  elementIds: string[];
+};
+
 export class ProcessValidationError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly details?: ProcessValidationDetails
+  ) {
     super(message);
     this.name = "ProcessValidationError";
   }
@@ -69,6 +82,18 @@ export function detectWorkaroundSignal(text: string): boolean {
 
 export function isExplicitConfirmation(text: string): boolean {
   return CONFIRMATION_REGEX.test(text);
+}
+
+export function normalizeOrganizationName(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ß/g, "ss")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function indexById<T extends { id: string }>(items: T[]): Map<string, T> {
@@ -319,6 +344,20 @@ export function validateProcessModel(
   // ====================================================
 
   for (const element of process.elements) {
+    if (element.type === "boundaryEvent") {
+      const attachedElement =
+        process.elements.find(
+          (candidate) =>
+            candidate.id === element.attachedToRef
+        );
+
+      if (attachedElement?.type !== "task") {
+        throw new ProcessValidationError(
+          `Boundary event ${element.id} must be attached to a task`
+        );
+      }
+    }
+
     let elementParticipantId =
       element.participantId;
 
@@ -352,7 +391,12 @@ export function validateProcessModel(
 
       if (!lane) {
         throw new ProcessValidationError(
-          `Element ${element.id} references missing lane ${element.laneId}`
+          `Element ${element.id} references missing lane ${element.laneId}`,
+          {
+            kind: "missing_lane",
+            laneRef: element.laneId,
+            elementIds: [element.id]
+          }
         );
       }
 
@@ -373,6 +417,30 @@ export function validateProcessModel(
       if (!elementParticipantId) {
         elementParticipantId =
           lane.participantId;
+      }
+    }
+
+    if (element.type === "boundaryEvent") {
+      const attachedElement =
+        process.elements.find(
+          (candidate) =>
+            candidate.id === element.attachedToRef
+        );
+
+      const attachedParticipantId =
+        attachedElement?.participantId ??
+        (attachedElement?.laneId
+          ? lanesById.get(attachedElement.laneId)?.participantId
+          : undefined);
+
+      if (
+        elementParticipantId &&
+        attachedParticipantId &&
+        elementParticipantId !== attachedParticipantId
+      ) {
+        throw new ProcessValidationError(
+          `Boundary event ${element.id} and attached task ${element.attachedToRef} must belong to the same participant`
+        );
       }
     }
   }
@@ -448,6 +516,66 @@ export function validateProcessModel(
     ) {
       throw new ProcessValidationError(
         `Sequence flow ${flow.id} crosses participant boundary from ${sourceParticipantId} to ${targetParticipantId}. Use a message flow instead.`
+      );
+    }
+  }
+
+  // ====================================================
+  // VALIDATE MAIN START CONNECTIVITY
+  // ====================================================
+  //
+  // Once actual activities exist, a unique start event
+  // must lead into the modeled process.
+  //
+  // This prevents a structurally disconnected AS-IS model
+  // from silently producing an empty conformance trace.
+  // ====================================================
+
+  const startEvents =
+    process.elements.filter(
+      (
+        element
+      ) =>
+        element.type ===
+        "start"
+    );
+
+
+  const taskElements =
+    process.elements.filter(
+      (
+        element
+      ) =>
+        element.type ===
+        "task"
+    );
+
+
+  if (
+    startEvents.length ===
+    1 &&
+    taskElements.length >
+    0
+  ) {
+    const startEvent =
+      startEvents[0];
+
+
+    const hasOutgoingSequenceFlow =
+      process.flows.some(
+        (
+          flow
+        ) =>
+          flow.from ===
+          startEvent.id
+      );
+
+
+    if (
+      !hasOutgoingSequenceFlow
+    ) {
+      throw new ProcessValidationError(
+        `Start event ${startEvent.id} has no outgoing sequence flow although the process contains ${taskElements.length} task(s)`
       );
     }
   }
@@ -580,6 +708,89 @@ export function validateProcessModel(
   }
 }
 
+// Events and gateways carry no responsibility of their own; they
+// belong to the lane of the adjacent element that does.
+function inferControlNodeLanes(
+  elements: ProcessElement[],
+  flows: ProcessModel["flows"],
+  lanes: ProcessModel["lanes"]
+): ProcessElement[] {
+  if (lanes.length === 0) {
+    return elements;
+  }
+
+  const laneById =
+    new Map(
+      lanes.map((lane) => [lane.id, lane])
+    );
+
+  const result =
+    elements.map((element) => ({ ...element }));
+
+  const byId =
+    new Map(
+      result.map((element) => [element.id, element])
+    );
+
+  const neighbourLane = (
+    element: ProcessElement
+  ): string | undefined => {
+    const incoming =
+      flows
+        .filter((flow) => flow.to === element.id)
+        .map((flow) => byId.get(flow.from));
+
+    const outgoing =
+      flows
+        .filter((flow) => flow.from === element.id)
+        .map((flow) => byId.get(flow.to));
+
+    const ordered =
+      element.type === "start"
+        ? [...outgoing, ...incoming]
+        : [...incoming, ...outgoing];
+
+    return ordered.find(
+      (neighbour) =>
+        neighbour?.laneId &&
+        laneById.has(neighbour.laneId)
+    )?.laneId;
+  };
+
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+
+    for (const element of result) {
+      if (
+        element.type === "task" ||
+        element.type === "boundaryEvent" ||
+        element.laneId
+      ) {
+        continue;
+      }
+
+      const laneId = neighbourLane(element);
+      const lane = laneId ? laneById.get(laneId) : undefined;
+
+      if (
+        !lane ||
+        (element.participantId &&
+          element.participantId !== lane.participantId)
+      ) {
+        continue;
+      }
+
+      element.laneId = lane.id;
+      element.participantId = lane.participantId;
+      changed = true;
+    }
+  }
+
+  return result;
+}
+
 export function applyProcessChanges(
   process: ProcessModel,
   changes: ProcessChanges,
@@ -587,6 +798,7 @@ export function applyProcessChanges(
 ): {
   process: ProcessModel;
   processChanges: ProcessChanges;
+  tempRefIds: Record<string, string>;
 } {
   // ====================================================
   // CLONE CURRENT PROCESS
@@ -768,6 +980,121 @@ export function applyProcessChanges(
         })
       )
   };
+
+  // ====================================================
+  // SYSTEM FALLBACK LANE (RESERVED NAME)
+  // ====================================================
+  //
+  // "Unassigned" is drawn by the renderer for elements without
+  // a responsibility. A model lane with that name (created by
+  // an earlier turn or an editor rename) is a leftover of that
+  // fallback: its members become unassigned instead of the
+  // process being blocked, and later references to it mean
+  // "no responsibility".
+  // ====================================================
+
+  const fallbackLaneRefs =
+    new Set<string>([
+      ...cloned.lanes
+        .filter(
+          (lane) =>
+            isFallbackLaneName(lane.name)
+        )
+        .map((lane) => lane.id),
+      ...applied.addLanes
+        .filter(
+          (lane) =>
+            isFallbackLaneName(lane.name)
+        )
+        .map((lane) => lane.tempRef)
+    ]);
+
+  if (fallbackLaneRefs.size > 0) {
+    cloned.lanes =
+      cloned.lanes.filter(
+        (lane) =>
+          !fallbackLaneRefs.has(lane.id)
+      );
+
+    cloned.elements =
+      cloned.elements.map(
+        (element) => {
+          if (
+            !element.laneId ||
+            !fallbackLaneRefs.has(element.laneId)
+          ) {
+            return element;
+          }
+
+          const { laneId: _removed, ...rest } =
+            element;
+
+          return rest as ProcessElement;
+        }
+      );
+
+    applied.addLanes =
+      applied.addLanes.filter(
+        (lane) =>
+          !fallbackLaneRefs.has(lane.tempRef)
+      );
+
+    applied.removeLaneIds =
+      applied.removeLaneIds.filter(
+        (id) => !fallbackLaneRefs.has(id)
+      );
+
+    applied.updateLanes =
+      applied.updateLanes.filter(
+        (update) =>
+          !fallbackLaneRefs.has(update.id)
+      );
+
+    for (
+      const element of
+      applied.addElements
+    ) {
+      if (
+        element.laneRef &&
+        fallbackLaneRefs.has(element.laneRef)
+      ) {
+        delete element.laneRef;
+      }
+    }
+
+    for (
+      const update of
+      applied.updateElements
+    ) {
+      if (
+        update.laneRef &&
+        fallbackLaneRefs.has(update.laneRef)
+      ) {
+        delete update.laneRef;
+      }
+
+      if (
+        update.laneId &&
+        fallbackLaneRefs.has(update.laneId)
+      ) {
+        delete update.laneId;
+      }
+    }
+  }
+
+  for (
+    const update of
+    applied.updateLanes
+  ) {
+    if (
+      update.name &&
+      isFallbackLaneName(update.name)
+    ) {
+      throw new ProcessValidationError(
+        `Lane ${update.id} cannot be named "${update.name}" because that name is reserved for activities without a responsibility`
+      );
+    }
+  }
 
   // ====================================================
   // WORKING COPIES
@@ -1232,6 +1559,29 @@ export function applyProcessChanges(
       );
     }
 
+    // The same responsibility keeps one lane and one stable ID.
+    const normalizedName =
+      normalizeOrganizationName(draft.name);
+
+    const existingLane =
+      normalizedName
+        ? nextLanes.find(
+          (lane) =>
+            lane.participantId === participantId &&
+            normalizeOrganizationName(lane.name) ===
+            normalizedName
+        )
+        : undefined;
+
+    if (existingLane) {
+      tempRefToLaneId.set(
+        draft.tempRef,
+        existingLane.id
+      );
+
+      continue;
+    }
+
     const finalId =
       allocateBpmnId(
         draft.tempRef,
@@ -1391,6 +1741,24 @@ export function applyProcessChanges(
         resolvedParticipantId;
     }
 
+    const mergedName =
+      normalizeOrganizationName(merged.name);
+
+    const collidingLane =
+      nextLanes.find(
+        (lane) =>
+          lane.id !== merged.id &&
+          lane.participantId === merged.participantId &&
+          normalizeOrganizationName(lane.name) ===
+          mergedName
+      );
+
+    if (collidingLane) {
+      throw new ProcessValidationError(
+        `Lane ${merged.id} cannot be renamed to "${merged.name}" because lane ${collidingLane.id} already has that name`
+      );
+    }
+
     nextLanes[index] =
       merged;
   }
@@ -1451,7 +1819,12 @@ export function applyProcessChanges(
       !laneId
     ) {
       throw new ProcessValidationError(
-        `Element ${candidate.tempRef ?? finalId} references unknown lane ${candidate.laneRef}`
+        `Element ${candidate.tempRef ?? finalId} references unknown lane ${candidate.laneRef}`,
+        {
+          kind: "unknown_lane",
+          laneRef: candidate.laneRef,
+          elementIds: [finalId]
+        }
       );
     }
 
@@ -1603,6 +1976,22 @@ export function applyProcessChanges(
       name:
         candidate.name.trim(),
 
+      ...(candidate.eventDefinitionType
+        ? {
+            eventDefinitionType:
+              candidate.eventDefinitionType
+          }
+        : {}),
+
+      ...(candidate.type === "boundaryEvent"
+        ? {
+            attachedToRef:
+              candidate.attachedToRef ?? "",
+            cancelActivity:
+              candidate.cancelActivity ?? true
+          }
+        : {}),
+
       participantId,
 
       laneId
@@ -1647,6 +2036,50 @@ export function applyProcessChanges(
 
     return undefined;
   };
+
+  nextElements =
+    nextElements.map(
+      (element) => {
+        if (element.type !== "boundaryEvent") {
+          return element;
+        }
+
+        const attachedToRef =
+          resolveElementRef(
+            element.attachedToRef
+          );
+
+        if (!attachedToRef) {
+          throw new ProcessValidationError(
+            `Boundary event ${element.id} must reference an attached task`
+          );
+        }
+
+        const attachedElement =
+          elementsById.get(attachedToRef);
+
+        if (attachedElement?.type !== "task") {
+          throw new ProcessValidationError(
+            `Boundary event ${element.id} must be attached to an existing task`
+          );
+        }
+
+        return {
+          ...element,
+          attachedToRef
+        };
+      }
+    );
+
+  elementsById =
+    new Map(
+      nextElements.map(
+        (element) => [
+          element.id,
+          element
+        ]
+      )
+    );
 
   // ====================================================
   // 6. UPDATE PROCESS ELEMENTS
@@ -1695,6 +2128,53 @@ export function applyProcessChanges(
     ) {
       cleanUpdate.name =
         update.name.trim();
+    }
+
+    if (
+      update.eventDefinitionType != null
+    ) {
+      cleanUpdate.eventDefinitionType =
+        update.eventDefinitionType;
+    }
+
+    if (
+      update.attachedToRef != null
+    ) {
+      if (existingElement.type !== "boundaryEvent") {
+        throw new ProcessValidationError(
+          `Element ${update.id} cannot have a boundary attachment`
+        );
+      }
+
+      const attachedToRef =
+        resolveElementRef(
+          update.attachedToRef
+        );
+
+      if (
+        !attachedToRef ||
+        elementsById.get(attachedToRef)?.type !== "task"
+      ) {
+        throw new ProcessValidationError(
+          `Boundary event ${update.id} must be attached to an existing task`
+        );
+      }
+
+      cleanUpdate.attachedToRef =
+        attachedToRef;
+    }
+
+    if (
+      update.cancelActivity != null
+    ) {
+      if (existingElement.type !== "boundaryEvent") {
+        throw new ProcessValidationError(
+          `Element ${update.id} cannot have boundary cancellation behavior`
+        );
+      }
+
+      cleanUpdate.cancelActivity =
+        update.cancelActivity;
     }
 
     // --------------------------------------------------
@@ -1785,7 +2265,12 @@ export function applyProcessChanges(
 
       if (!fromRef) {
         throw new ProcessValidationError(
-          `Element ${update.id} references unknown lane ${update.laneRef}`
+          `Element ${update.id} references unknown lane ${update.laneRef}`,
+          {
+            kind: "unknown_lane",
+            laneRef: update.laneRef,
+            elementIds: [update.id]
+          }
         );
       }
 
@@ -2064,7 +2549,280 @@ export function applyProcessChanges(
           : undefined
     });
   }
+  // ====================================================
+  // 7A. REPAIR MISSING START CONNECTION
+  // ====================================================
+  //
+  // Structured LLM output may occasionally create the
+  // first process activities correctly, but omit the
+  // SequenceFlow:
+  //
+  //   start -> first activity
+  //
+  // Example:
+  //
+  //   t1 -> t2
+  //
+  // while:
+  //
+  //   start -> t1
+  //
+  // is missing.
+  //
+  // buildMainTrace() deliberately follows only explicit
+  // ProcessModel flows and must not invent process
+  // semantics.
+  //
+  // Therefore this repair belongs here, at the point where
+  // the ProcessModel itself is constructed.
+  //
+  // The repair is intentionally conservative:
+  //
+  // - exactly one start event must exist
+  // - the start must currently have no outgoing flow
+  // - exactly one unambiguous root activity must exist
+  // - source and target must belong to the same participant
+  //
+  // If several possible roots exist, nothing is guessed.
+  // ====================================================
 
+  const startEvents =
+    nextElements.filter(
+      (
+        element
+      ) =>
+        element.type ===
+        "start"
+    );
+
+
+  if (
+    startEvents.length ===
+    1
+  ) {
+    const startEvent =
+      startEvents[0];
+
+
+    // ==================================================
+    // DOES START ALREADY HAVE AN OUTGOING FLOW?
+    // ==================================================
+
+    const existingStartOutgoingFlows =
+      nextFlows.filter(
+        (
+          flow
+        ) =>
+          flow.from ===
+          startEvent.id
+      );
+
+
+    if (
+      existingStartOutgoingFlows.length ===
+      0
+    ) {
+      // ==================================================
+      // DETERMINE ELEMENTS THAT ALREADY HAVE AN INCOMING
+      // SEQUENCE FLOW
+      // ==================================================
+
+      const elementsWithIncomingFlow =
+        new Set(
+          nextFlows.map(
+            (
+              flow
+            ) =>
+              flow.to
+          )
+        );
+
+
+      // ==================================================
+      // FIND ROOT ACTIVITY
+      // ==================================================
+      //
+      // Example:
+      //
+      // Existing:
+      //
+      //   t1 -> t2 -> t3
+      //
+      // Incoming:
+      //
+      //   t2
+      //   t3
+      //
+      // Unique root:
+      //
+      //   t1
+      //
+      // Therefore:
+      //
+      //   start -> t1
+      //
+      // can safely be repaired.
+      // ==================================================
+
+      const rootCandidates =
+        nextElements.filter(
+          (
+            element
+          ) => {
+            // --------------------------------------------
+            // Only executable nodes are candidates.
+            //
+            // An end event is deliberately not selected
+            // automatically.
+            // --------------------------------------------
+
+            if (
+              element.type !==
+              "task" &&
+              element.type !==
+              "exclusiveGateway"
+            ) {
+              return false;
+            }
+
+
+            // --------------------------------------------
+            // Must belong to the same BPMN participant.
+            // SequenceFlow must never cross pools.
+            // --------------------------------------------
+
+            if (
+              startEvent.participantId &&
+              element.participantId &&
+              startEvent.participantId !==
+              element.participantId
+            ) {
+              return false;
+            }
+
+
+            // --------------------------------------------
+            // A root node has no incoming SequenceFlow.
+            // --------------------------------------------
+
+            return (
+              !elementsWithIncomingFlow.has(
+                element.id
+              )
+            );
+          }
+        );
+
+
+      // ==================================================
+      // EXACTLY ONE ROOT -> SAFE REPAIR
+      // ==================================================
+
+      if (
+        rootCandidates.length ===
+        1
+      ) {
+        const firstElement =
+          rootCandidates[0];
+
+
+        const generatedFlowId =
+          allocateBpmnId(
+            undefined,
+            "flow"
+          );
+
+
+        // ----------------------------------------------
+        // Persist in actual ProcessModel
+        // ----------------------------------------------
+
+        nextFlows.push({
+          id:
+            generatedFlowId,
+
+          from:
+            startEvent.id,
+
+          to:
+            firstElement.id
+        });
+
+
+        // ----------------------------------------------
+        // Also expose the deterministic repair through
+        // processChanges.
+        //
+        // This keeps auditing/debug logging consistent:
+        // the returned ProcessChanges reflect what was
+        // actually applied.
+        // ----------------------------------------------
+
+        applied.addFlows.push({
+          id:
+            generatedFlowId,
+
+          from:
+            startEvent.id,
+
+          to:
+            firstElement.id
+        });
+
+
+        if (
+          nodeProcess.env.NODE_ENV !==
+          "production"
+        ) {
+          console.info(
+            "[workaround-check] repaired missing start sequence flow:",
+            {
+              flowId:
+                generatedFlowId,
+
+              from:
+                startEvent.id,
+
+              to:
+                firstElement.id
+            }
+          );
+        }
+      } else if (
+        rootCandidates.length >
+        1 &&
+        nodeProcess.env.NODE_ENV !==
+        "production"
+      ) {
+        // ==================================================
+        // AMBIGUOUS STRUCTURE
+        // ==================================================
+        //
+        // Do not silently connect the start to an arbitrary
+        // activity. A later clarification should resolve
+        // this instead.
+        // ==================================================
+
+        console.warn(
+          "[workaround-check] cannot repair missing start sequence flow because multiple root activities exist:",
+          rootCandidates.map(
+            (
+              element
+            ) => ({
+              id:
+                element.id,
+
+              name:
+                element.name,
+
+              type:
+                element.type
+            })
+          )
+        );
+      }
+    }
+  }
   // ====================================================
   // 8. ADD MESSAGE FLOWS
   // ====================================================
@@ -2404,7 +3162,11 @@ export function applyProcessChanges(
     nextLanes;
 
   cloned.elements =
-    nextElements;
+    inferControlNodeLanes(
+      nextElements,
+      nextFlows,
+      nextLanes
+    );
 
   cloned.flows =
     nextFlows;
@@ -2434,6 +3196,11 @@ export function applyProcessChanges(
       cloned,
 
     processChanges:
-      applied
+      applied,
+
+    tempRefIds:
+      Object.fromEntries(
+        tempRefToElementId
+      )
   };
 }

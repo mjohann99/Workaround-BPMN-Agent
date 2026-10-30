@@ -7,7 +7,8 @@ import {
 import {
   decomposeEmployeeMessage,
   extractCorrectionDirective,
-  fallbackResponse
+  fallbackResponse,
+  responseFormatSchema
 } from "../src/openai.js";
 
 import {
@@ -19,6 +20,57 @@ import {
 import {
   type ProcessChanges
 } from "../src/types.js";
+
+type ResponseSchemaNode = {
+  type?: string;
+  properties?: Record<string, ResponseSchemaNode>;
+  required?: string[];
+  items?: ResponseSchemaNode;
+};
+
+function expectStrictSchemaRequiredKeys(
+  schema: ResponseSchemaNode
+): void {
+  if (
+    schema.type === "object" &&
+    schema.properties
+  ) {
+    const propertyNames =
+      Object.keys(schema.properties);
+
+    expect(
+      schema.required
+    ).toEqual(
+      expect.arrayContaining(propertyNames)
+    );
+
+    expect(
+      schema.required
+    ).toHaveLength(
+      propertyNames.length
+    );
+
+    Object.values(
+      schema.properties
+    ).forEach(
+      expectStrictSchemaRequiredKeys
+    );
+  }
+
+  if (schema.items) {
+    expectStrictSchemaRequiredKeys(
+      schema.items
+    );
+  }
+}
+
+describe("OpenAI response schema", () => {
+  it("requires every property for strict structured outputs", () => {
+    expectStrictSchemaRequiredKeys(
+      responseFormatSchema as unknown as ResponseSchemaNode
+    );
+  });
+});
 
 
 // ======================================================
@@ -64,6 +116,33 @@ function emptyProcessChanges(): ProcessChanges {
 describe(
   "fallback decomposition",
   () => {
+    it(
+      "responds in English when fallback receives German input",
+      () => {
+        const response =
+          fallbackResponse(
+            "Ich weiß nicht, was ich dazu sagen soll.",
+            createInitialProcess()
+          );
+
+        expect(
+          response.language
+        ).toBe("de");
+
+        expect(
+          response.assistantMessage
+        ).toBe(
+          "I was unable to process the input automatically. Please try again."
+        );
+
+        expect(
+          response.nextQuestion.question
+        ).toBe(
+          "Could you please describe the process information again?"
+        );
+      }
+    );
+
     it(
       "extracts multiple normalized activities from one message",
       () => {

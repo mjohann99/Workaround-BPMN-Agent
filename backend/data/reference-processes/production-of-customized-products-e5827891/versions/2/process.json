@@ -1,0 +1,161 @@
+{
+  "id": "process_main",
+  "name": "Production of Customized Products",
+  "status": "eliciting",
+  "participants": [
+    {
+      "id": "Participant_SafetySolutions",
+      "name": "Safety Solutions Inc.",
+      "type": "internal",
+      "processVisibility": "white_box"
+    }
+  ],
+  "lanes": [
+    {
+      "id": "Lane_Production",
+      "participantId": "Participant_SafetySolutions",
+      "name": "Production",
+      "type": "department"
+    },
+    {
+      "id": "Lane_OrderManagementPlanning",
+      "participantId": "Participant_SafetySolutions",
+      "name": "Order management and planning",
+      "type": "department"
+    }
+  ],
+  "elements": [
+    {
+      "id": "Activity_00fucrg",
+      "type": "task",
+      "name": "Register customer order in ERP",
+      "participantId": "Participant_SafetySolutions",
+      "laneId": "Lane_OrderManagementPlanning"
+    },
+    {
+      "id": "Activity_1me5stv",
+      "type": "task",
+      "name": "Create and release production order",
+      "participantId": "Participant_SafetySolutions",
+      "laneId": "Lane_OrderManagementPlanning"
+    },
+    {
+      "id": "StartEvent_OrderReceived",
+      "type": "start",
+      "name": "Customer order received",
+      "participantId": "Participant_SafetySolutions",
+      "laneId": "Lane_OrderManagementPlanning"
+    },
+    {
+      "id": "Activity_0w7xmks",
+      "type": "task",
+      "name": "Withdraw raw materials for order",
+      "participantId": "Participant_SafetySolutions",
+      "laneId": "Lane_Production"
+    },
+    {
+      "id": "Activity_0egslmo",
+      "type": "task",
+      "name": "Register customer order in ERP",
+      "participantId": "Participant_SafetySolutions",
+      "laneId": "Lane_Production"
+    },
+    {
+      "id": "Activity_1o8hvz3",
+      "type": "task",
+      "name": "Record material consumption in ERP",
+      "participantId": "Participant_SafetySolutions",
+      "laneId": "Lane_Production"
+    },
+    {
+      "id": "Activity_19rnqd7",
+      "type": "task",
+      "name": "Produce semi-finished products",
+      "participantId": "Participant_SafetySolutions",
+      "laneId": "Lane_Production"
+    },
+    {
+      "id": "Activity_0y69phj",
+      "type": "task",
+      "name": "Record semi-finished products in ERP",
+      "participantId": "Participant_SafetySolutions",
+      "laneId": "Lane_Production"
+    },
+    {
+      "id": "Activity_1eoaf16",
+      "type": "task",
+      "name": "Complete customer-specific product",
+      "participantId": "Participant_SafetySolutions",
+      "laneId": "Lane_Production"
+    },
+    {
+      "id": "Activity_1ei546l",
+      "type": "task",
+      "name": "Confirm finished product in ERP",
+      "participantId": "Participant_SafetySolutions",
+      "laneId": "Lane_Production"
+    },
+    {
+      "id": "EndEvent_ProductionCompleted",
+      "type": "end",
+      "name": "Production completed",
+      "participantId": "Participant_SafetySolutions",
+      "laneId": "Lane_Production"
+    }
+  ],
+  "flows": [
+    {
+      "id": "Flow_01",
+      "from": "StartEvent_OrderReceived",
+      "to": "Activity_00fucrg"
+    },
+    {
+      "id": "Flow_0pfu31n",
+      "from": "Activity_00fucrg",
+      "to": "Activity_1me5stv"
+    },
+    {
+      "id": "Flow_0338osr",
+      "from": "Activity_1me5stv",
+      "to": "Activity_0w7xmks"
+    },
+    {
+      "id": "Flow_0pkk3gr",
+      "from": "Activity_0w7xmks",
+      "to": "Activity_0egslmo"
+    },
+    {
+      "id": "Flow_0qsd5n1",
+      "from": "Activity_0egslmo",
+      "to": "Activity_1o8hvz3"
+    },
+    {
+      "id": "Flow_1tlndad",
+      "from": "Activity_1o8hvz3",
+      "to": "Activity_19rnqd7"
+    },
+    {
+      "id": "Flow_1n08vyb",
+      "from": "Activity_19rnqd7",
+      "to": "Activity_0y69phj"
+    },
+    {
+      "id": "Flow_01ylhh7",
+      "from": "Activity_0y69phj",
+      "to": "Activity_1eoaf16"
+    },
+    {
+      "id": "Flow_14aoxso",
+      "from": "Activity_1eoaf16",
+      "to": "Activity_1ei546l"
+    },
+    {
+      "id": "Flow_0uuvky2",
+      "from": "Activity_1ei546l",
+      "to": "EndEvent_ProductionCompleted"
+    }
+  ],
+  "messageFlows": [],
+  "workarounds": [],
+  "updatedAt": "2026-10-27T09:08:03.547Z"
+}

@@ -361,6 +361,21 @@ export const laneUpdateSchema = z
 // PROCESS ELEMENTS
 // ======================================================
 
+const bpmnEventDefinitionTypeSchema = z.enum([
+  "message",
+  "timer",
+  "error",
+  "escalation",
+  "conditional",
+  "link",
+  "signal",
+  "cancel",
+  "compensation",
+  "terminate",
+  "multiple",
+  "parallelMultiple"
+]);
+
 const startElementSchema = z
   .object({
     id:
@@ -376,7 +391,10 @@ const startElementSchema = z
       z.string().min(1).optional(),
 
     laneId:
-      z.string().min(1).optional()
+      z.string().min(1).optional(),
+
+    eventDefinitionType:
+      bpmnEventDefinitionTypeSchema.optional()
   })
   .strict();
 
@@ -446,6 +464,59 @@ const gatewayElementSchema = z
   })
   .strict();
 
+const intermediateEventSchema = z
+  .object({
+    id:
+      z.string().min(1),
+
+    type:
+      z.enum([
+        "intermediateCatchEvent",
+        "intermediateThrowEvent"
+      ]),
+
+    name:
+      z.string().min(1),
+
+    participantId:
+      z.string().min(1).optional(),
+
+    laneId:
+      z.string().min(1).optional(),
+
+    eventDefinitionType:
+      bpmnEventDefinitionTypeSchema.optional()
+  })
+  .strict();
+
+const boundaryEventSchema = z
+  .object({
+    id:
+      z.string().min(1),
+
+    type:
+      z.literal("boundaryEvent"),
+
+    name:
+      z.string().min(1),
+
+    participantId:
+      z.string().min(1).optional(),
+
+    laneId:
+      z.string().min(1).optional(),
+
+    attachedToRef:
+      z.string().min(1),
+
+    cancelActivity:
+      z.boolean(),
+
+    eventDefinitionType:
+      bpmnEventDefinitionTypeSchema.optional()
+  })
+  .strict();
+
 const endElementSchema = z
   .object({
     id:
@@ -461,7 +532,10 @@ const endElementSchema = z
       z.string().min(1).optional(),
 
     laneId:
-      z.string().min(1).optional()
+      z.string().min(1).optional(),
+
+    eventDefinitionType:
+      bpmnEventDefinitionTypeSchema.optional()
   })
   .strict();
 
@@ -472,6 +546,8 @@ export const processElementSchema =
       startElementSchema,
       taskElementSchema,
       gatewayElementSchema,
+      intermediateEventSchema,
+      boundaryEventSchema,
       endElementSchema
     ]
   );
@@ -497,11 +573,23 @@ export const changeElementSchema = z
       "start",
       "task",
       "exclusiveGateway",
+      "intermediateCatchEvent",
+      "intermediateThrowEvent",
+      "boundaryEvent",
       "end"
     ]),
 
     name:
       z.string().min(1),
+
+    eventDefinitionType:
+      bpmnEventDefinitionTypeSchema.nullable().optional(),
+
+    attachedToRef:
+      nullableOptionalString,
+
+    cancelActivity:
+      nullableOptionalBoolean,
 
     participantRef:
       nullableOptionalString,
@@ -546,6 +634,15 @@ export const processElementUpdateSchema = z
 
     name:
       nullableOptionalString,
+
+    eventDefinitionType:
+      bpmnEventDefinitionTypeSchema.nullable().optional(),
+
+    attachedToRef:
+      nullableOptionalString,
+
+    cancelActivity:
+      nullableOptionalBoolean,
 
     // Stable organizational IDs
     participantId:
@@ -1134,6 +1231,72 @@ export const llmProcessResponseSchema = z
         required: false,
         elementIds: [],
         question: ""
-      })
+      }),
+
+    responsibility:
+      z
+        .object({
+          intervieweeRole:
+            z.string().nullable().optional(),
+
+          actor:
+            z
+              .enum(["interviewee", "previous", "named"])
+              .nullable()
+              .optional(),
+
+          noFurtherDetail:
+            z.boolean().nullable().optional()
+        })
+        .strict()
+        .default({}),
+
+    practiceHints:
+      z
+        .array(
+          z
+            .object({
+              activityRefs:
+                z.array(z.string()).default([]),
+
+              relation:
+                z.enum(["same_practice", "independent"]),
+
+              extendsPracticeId:
+                z.string().nullable().optional(),
+
+              basis:
+                z.string().nullable().optional()
+            })
+            .strict()
+        )
+        .default([]),
+
+    practiceAnswers:
+      z
+        .array(
+          z
+            .object({
+              practiceId:
+                z.string().nullable().optional(),
+
+              field:
+                z.enum(["reason", "sinceWhen", "frequency"]),
+
+              scope:
+                z.enum(["practice", "activities"]),
+
+              activityRefs:
+                z.array(z.string()).default([]),
+
+              unknown:
+                z.boolean().nullable().optional(),
+
+              value:
+                z.string().nullable().optional()
+            })
+            .strict()
+        )
+        .default([])
   })
   .strict();

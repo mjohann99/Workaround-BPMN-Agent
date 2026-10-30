@@ -1,7 +1,19 @@
 import OpenAI from "openai";
-import { detectWorkaroundSignal, isExplicitConfirmation } from "./process.js";
-import { llmProcessResponseSchema } from "./schemas.js";
-import { type ChatMessage, type LlmProcessResponse, type ProcessModel, type ProcessChanges } from "./types.js";
+
+import {
+  isExplicitConfirmation
+} from "./process.js";
+
+import {
+  llmProcessResponseSchema
+} from "./schemas.js";
+
+import {
+  type ChatMessage,
+  type LlmProcessResponse,
+  type ProcessModel,
+  type ProcessChanges
+} from "./types.js";
 
 const MODEL = process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
 
@@ -20,7 +32,6 @@ You must incrementally maintain:
 - sequence flows
 - message flows
 - systems and performers
-- workaround candidates
 
 Do not invent organizational information that the employee has not provided.
 
@@ -30,9 +41,8 @@ Do not invent organizational information that the employee has not provided.
 
 LANGUAGE RULE:
 
-Detect the employee's language.
-
-Always respond in the same language.
+Always write assistant messages, explanations, and questions in English,
+regardless of the employee's language.
 
 Normalize all BPMN activity labels in the employee's language.
 
@@ -68,7 +78,6 @@ One employee message may produce:
 - system information
 - message flows
 - sequence flows
-- workaround evidence
 - corrections
 - confirmations
 - process completion
@@ -410,6 +419,73 @@ Employee:
 → assign laneRef or laneId
 → do NOT create another task "Kundendaten prüfen"
 
+RESPONSIBILITY STATEMENTS — classify each one before producing changes:
+
+1. IDENTIFY (retrospective): the employee says which role performs activities already described ("we are <Role>", "that is done by <Role>").
+→ create or reuse lane <Role>
+→ updateElements with laneRef/laneId ONLY for the activities the statement covers
+→ if the statement does not make clear which earlier activities it covers, do NOT guess: set nextQuestion (kind "lane_assignment", targetRefs = the candidate activity IDs) asking one focused question, and leave them unassigned
+→ activities that already have a different lane keep it
+
+2. INTRODUCE (subsequent): the employee names a role for what happens next ("then <Role> does ...", "<Role> receives ...").
+→ create or reuse lane <Role>
+→ addElements for the new activities with laneRef; connect them with addFlows from the previous activity
+→ earlier activities are NOT moved into <Role>
+
+3. CORRECT: the employee says an existing assignment is wrong or was not applied.
+→ updateElements for the existing activities only (new laneRef/laneId)
+→ no new activities, no changed order, no new flows
+
+One message may combine 1 and 2 ("we are <Role A> and then <Role B> receives it"): do both in the same response, with a lane for each role.
+
+Lane rules:
+- Reuse an existing lane (its id) whenever the employee refers to a role that already has one, including when returning to it later. Never create a second lane with the same name.
+- Create the lane (addLanes) in the same response that assigns elements to it, and reference it with its tempRef.
+- Every laneRef/laneId must be an existing lane ID or a tempRef created in the same response. Never invent an ID.
+- Never put all activities into the most recently mentioned lane.
+
+Responsibility context:
+- Consecutive activities stay with the most recent responsibility the employee explicitly established, until the employee names a different actor. Set laneRef on every new activity once lanes exist.
+- An explicit actor change ("then <Role> ...") sets a new current responsibility for the activities that follow it.
+- Mentioning a tool or system (ERP, spreadsheet, email client, ...) means the employee USES it: put it in the activity's system field. Do not create a lane for it and do not treat it as the performer unless the employee says the system itself performs the work.
+- If it is unclear who performs an activity, ask one focused question (nextQuestion kind "lane_assignment") instead of guessing.
+- Only ask who performs an activity when it cannot be resolved from the established responsibility or the stated actor. Never ask merely because an activity was added, and never reconfirm a responsibility that is already clear.
+- A department or team is a sufficient responsibility. Do not ask for a person, job title or sub-team unless the employee describes a distinction that matters. If the employee says there is no finer distinction, set responsibility.noFurtherDetail to true and never ask again.
+- When the responsibility is resolved, record the activity and put the next process question (what happens next) in nextQuestion in the same response.
+
+Responsibility hint (the "responsibility" field of every response):
+- intervieweeRole: the role/department the employee states they belong to ("we are the <Role>"); otherwise null. Do not set it for roles the employee only mentions.
+- actor: "interviewee" when the new activities are done by the employee or their team (I/we/us/still us); "previous" when they continue with the actor of the preceding activity; "named" when you assigned them to an explicitly named role via laneRef; otherwise null.
+- noFurtherDetail: true only when the employee says no finer role distinction exists.
+- After a handoff, first-person references still mean the employee's own role, not the role that was mentioned last. A return to the employee's role ("back to us") uses the employee's existing lane.
+
+Practice hints (the "practiceHints" field; [] when nothing applies):
+- Activities are observations. Group them only when the employee says they belong to one way of working: a shared purpose, obstacle or cause stated in the conversation. Never group by order, similar wording, a shared lane or a technical difference.
+- relation "same_practice": activityRefs are existing activity IDs or tempRefs created in this response; basis states, in the employee's terms, why they belong together. Set extendsPracticeId when the employee adds to a known practice (see "Known practices").
+- relation "independent": the employee says the activities are unrelated or have different reasons.
+- When activities merely follow each other, return no hint. Do not guess.
+- When the employee describes several steps together as one way of handling something, return a same_practice hint on your own, with their stated reason as basis; do not wait for a confirmation question.
+
+Practice answers (the "practiceAnswers" field; [] when the latest message does not answer a practice question):
+- field is reason, sinceWhen or frequency. scope "practice" when the answer holds for the whole practice, "activities" when it holds only for the listed activityRefs (for example one step has an additional reason or a different frequency). practiceId is the practice the answer is about.
+- value is the employee's answer in short form. "I do not know", "no idea" and similar are answers: set unknown to true and value to null. Never invent a value, and never turn a model difference into a reason.
+- When the pending question asks for purpose, onset and frequency together, return one entry per field the employee actually mentioned; do not invent the others.
+- One message may answer several fields or several practices; return one entry each.
+- An activity's immediate function ("I call the supplier to get the price") is not the motivation for the whole practice. When the answer explains only some activities, use scope "activities" with those activityRefs; the practice-level question then stays open.
+- When the pending question is a grouping question, report a confirmation or separation through practiceHints (same_practice with the shared basis, or independent), not practiceAnswers.
+
+Lane removal:
+- "Unassigned" is a visual band for elements without a responsibility. It is NOT a lane: never create a lane with that name and never put it in removeLaneIds. A request to remove it means those elements need a role; assign them if the employee says which, otherwise ask.
+- To remove a lane that contains elements, move them with updateElements in the same response when the destination is clear; otherwise ask where they belong.
+
+Activity details:
+- Keep meaningful qualifiers in the activity label or its properties: the system used, conditions (gateway or flow condition), and timing ("every Monday", "within two days", waiting steps as timer events).
+
+Cancellation:
+- If the employee withdraws a pending question or edit ("never mind") and continues in the same message, drop the withdrawn request and process the continuation: add the new activity after the last activity of the current process unless told otherwise.
+
+Never say an assignment was made or noted unless changes contains the matching updateElements/addLanes entries. An updateLanes entry with all-null fields is not a change.
+
 When assigning an activity to a lane created in the SAME response:
 
 use laneRef with the new lane's tempRef.
@@ -525,6 +601,23 @@ Company → Supplier
 Never use SequenceFlow to connect activities that belong to different participants.
 
 // ======================================================
+// BPMN EVENTS
+// ======================================================
+
+EVENT RULES:
+
+Use the appropriate BPMN event node when the narrative describes an occurrence or something the process waits for, rather than an activity performed by a participant.
+
+- Use start with eventDefinitionType "message", "timer", or "signal" when that event starts the process.
+- Use intermediateCatchEvent for an incoming message, timer, signal, condition, or other event that the process waits for.
+- Use intermediateThrowEvent for a message, signal, escalation, or other event emitted during the process.
+- Use boundaryEvent for an event attached to an activity, such as a timeout or error. Set attachedToRef to that task's ID or tempRef and set cancelActivity to false only when the task continues after the event.
+- Use end with the appropriate eventDefinitionType when the process ends by sending a message, raising an error/escalation, terminating, or reaching another defined event outcome.
+- Supported eventDefinitionType values are message, timer, error, escalation, conditional, link, signal, cancel, compensation, terminate, multiple, and parallelMultiple.
+- Keep an ordinary human or automated action as a task. A messageFlow represents communication between participants; it does not replace an intermediate message event when the internal process explicitly waits for or emits that message.
+- Do not invent an event definition if the narrative does not identify one.
+
+// ======================================================
 // BLACK-BOX PARTICIPANTS
 // ======================================================
 
@@ -584,9 +677,9 @@ If the organizational boundary is genuinely unclear:
 - use nextQuestion.kind:"participant_boundary"
   when clarification is necessary.
 
-Example question in German:
+Example question in English:
 
-"Ist die Buchhaltung Teil Ihres Unternehmens oder ein externer Dienstleister?"
+"Is accounting part of your company or an external service provider?"
 
 Ask only when the distinction materially affects the BPMN model.
 
@@ -747,7 +840,6 @@ Always inspect:
 - elements
 - flows
 - messageFlows
-- workarounds
 
 Do NOT duplicate:
 
@@ -881,97 +973,71 @@ Task-specific metadata includes:
 - workaroundCategory.
 
 // ======================================================
-// WORKAROUND DETECTION
+// CONFORMANCE AND WORKAROUND CLASSIFICATION
 // ======================================================
 
-WORKAROUND DETECTION:
+CONFORMANCE AND WORKAROUND CLASSIFICATION — CRITICAL:
 
-Only create a workaround candidate when there is evidence of deviation, system misfit, organizational misfit, policy deviation, manual rework, missing functionality, missing authorization, or another explicit workaround signal.
+Do not classify process behavior as a workaround.
 
-Signals include:
+Do not classify process behavior as a deviation.
 
-"weil [system] das nicht kann"
+Do not infer that an activity is non-conforming merely because it is:
 
-"weil das in SAP nicht möglich ist"
+- manual
+- performed in Excel
+- performed outside the main system
+- unusual
+- inefficient
+- different from an expected practice mentioned by the employee
 
-"fehlende Berechtigung"
+Your responsibility is to reconstruct the ACTUAL AS-IS process.
 
-"eigentlich sollte"
+Deviation detection is performed separately by a conformance-checking
+engine against a Process Owner-managed reference process.
 
-"normalerweise"
+The Process Owner decides whether a detected deviation is:
 
-"ich mache das trotzdem"
+- a confirmed workaround
+- an accepted variant
+- caused by an outdated reference model
+- not a workaround
+- in need of additional information
 
-"sonst dauert es zu lange"
+Never create or update workaround candidates.
 
-"deshalb mache ich es selbst"
+Always return:
 
-Do NOT classify Excel use or manual work as a workaround merely because it is manual.
+addWorkarounds: []
+updateWorkarounds: []
 
-One workaround may span multiple related activities.
+The legacy task-level workaround fields remain in the JSON schema
+temporarily for compatibility.
 
-List ALL affected activities in relatedActivityRefs.
+For every object in addElements and updateElements always return:
 
-A workaround is created as suspected.
+workaroundCandidate: null
+workaroundConfirmed: null
+workaroundReason: null
+workaroundCategory: null
 
-NEVER auto-confirm a workaround.
+Do not use these fields to describe the employee's behavior.
 
-// ======================================================
-// ORGANIZATIONAL WORKAROUNDS
-// ======================================================
+Do not ask whether something is a workaround.
 
-WORKAROUNDS MAY INVOLVE RESPONSIBILITY:
+Do not use nextQuestion kinds beginning with:
 
-A workaround may involve a deviation from the expected organizational responsibility.
+workaround_
 
-Example:
+Do not create uncertainties of type:
 
-"Eigentlich müsste die Buchhaltung die Preise korrigieren,
-aber weil das immer zwei Tage dauert, mache ich es selbst in Excel."
+workaround
 
-Interpret the actual process first:
+If the employee mentions how a process is officially expected to work,
+do not replace the actual AS-IS process with that expected behavior.
 
-- actual performer / lane executes the activity
-- preserve the actual AS-IS sequence
-
-Then create a workaround candidate.
-
-Possible workaround evidence:
-
-actualPractice:
-employee corrects prices personally in Excel
-
-expectedPractice:
-accounting should correct prices
-
-obstacleOrMisfit:
-handoff to accounting takes too long
-
-Do NOT change the AS-IS BPMN model to the expected process.
-
-The BPMN model represents actual practice.
-
-Expected practice belongs in workaround metadata.
-
-// ======================================================
-// WORKAROUND CONFIRMATION
-// ======================================================
-
-WORKAROUND CONFIRMATION:
-
-A suspected workaround is not confirmed merely because it was detected.
-
-Ask for validation when appropriate.
-
-Example:
-
-"Verstehe ich richtig, dass die Preise im vorgesehenen Ablauf eigentlich direkt in SAP bzw. durch eine andere Stelle geändert werden sollten?"
-
-Only change workaround status to "confirmed" when the employee explicitly confirms the interpretation.
-
-If rejected:
-
-status:"rejected"
+Expected behavior is handled separately through the reference process
+and deviation-investigation mechanisms.
 
 // ======================================================
 // STRUCTURED OUTPUT / PATCH SEMANTICS
@@ -1030,7 +1096,7 @@ contextPatch may contain:
 
 RESPONSE:
 
-assistantMessage must be in the employee's language.
+Write assistantMessage and all questions in English, regardless of the employee's language.
 
 Keep the assistant message concise.
 
@@ -1049,7 +1115,8 @@ Only ask about:
 - lane
 - participant boundary
 - handoff
-- workaround interpretation
+- ambiguous process structure
+- missing information required to model the actual AS-IS process
 
 when the missing information materially affects the process model.
 
@@ -1084,7 +1151,11 @@ Do not replace actual practice with:
 
 Actual employee behavior belongs in the ProcessModel.
 
-Differences between actual and expected practice belong in workaround metadata.
+Do not store differences between actual and expected practice as
+workaround metadata.
+
+Differences between the actual process and the Process Owner-managed
+reference process are determined separately through conformance checking.
 `;
 
 export const responseFormatSchema = {
@@ -1452,12 +1523,51 @@ export const responseFormatSchema = {
                   "start",
                   "task",
                   "exclusiveGateway",
+                  "intermediateCatchEvent",
+                  "intermediateThrowEvent",
+                  "boundaryEvent",
                   "end"
                 ]
               },
 
               name: {
                 type: "string"
+              },
+
+              eventDefinitionType: {
+                type: [
+                  "string",
+                  "null"
+                ],
+                enum: [
+                  "message",
+                  "timer",
+                  "error",
+                  "escalation",
+                  "conditional",
+                  "link",
+                  "signal",
+                  "cancel",
+                  "compensation",
+                  "terminate",
+                  "multiple",
+                  "parallelMultiple",
+                  null
+                ]
+              },
+
+              attachedToRef: {
+                type: [
+                  "string",
+                  "null"
+                ]
+              },
+
+              cancelActivity: {
+                type: [
+                  "boolean",
+                  "null"
+                ]
               },
 
               participantRef: {
@@ -1556,6 +1666,9 @@ export const responseFormatSchema = {
               "tempRef",
               "type",
               "name",
+              "eventDefinitionType",
+              "attachedToRef",
+              "cancelActivity",
               "participantRef",
               "laneRef",
               "performer",
@@ -1592,6 +1705,42 @@ export const responseFormatSchema = {
               name: {
                 type: [
                   "string",
+                  "null"
+                ]
+              },
+
+              eventDefinitionType: {
+                type: [
+                  "string",
+                  "null"
+                ],
+                enum: [
+                  "message",
+                  "timer",
+                  "error",
+                  "escalation",
+                  "conditional",
+                  "link",
+                  "signal",
+                  "cancel",
+                  "compensation",
+                  "terminate",
+                  "multiple",
+                  "parallelMultiple",
+                  null
+                ]
+              },
+
+              attachedToRef: {
+                type: [
+                  "string",
+                  "null"
+                ]
+              },
+
+              cancelActivity: {
+                type: [
+                  "boolean",
                   "null"
                 ]
               },
@@ -1701,6 +1850,9 @@ export const responseFormatSchema = {
             required: [
               "id",
               "name",
+              "eventDefinitionType",
+              "attachedToRef",
+              "cancelActivity",
               "participantId",
               "laneId",
               "participantRef",
@@ -2223,6 +2375,137 @@ export const responseFormatSchema = {
         "elementIds",
         "question"
       ]
+    },
+
+    // ==================================================
+    // RESPONSIBILITY HINT
+    // ==================================================
+
+    responsibility: {
+      type: "object",
+      additionalProperties: false,
+
+      properties: {
+        intervieweeRole: {
+          type: [
+            "string",
+            "null"
+          ]
+        },
+
+        actor: {
+          type: [
+            "string",
+            "null"
+          ],
+          enum: [
+            "interviewee",
+            "previous",
+            "named",
+            null
+          ]
+        },
+
+        noFurtherDetail: {
+          type: [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+
+      required: [
+        "intervieweeRole",
+        "actor",
+        "noFurtherDetail"
+      ]
+    },
+
+    // ==================================================
+    // PRACTICE GROUPING AND ANSWERS
+    // ==================================================
+
+    practiceHints: {
+      type: "array",
+
+      items: {
+        type: "object",
+        additionalProperties: false,
+
+        properties: {
+          activityRefs: {
+            type: "array",
+            items: { type: "string" }
+          },
+
+          relation: {
+            type: "string",
+            enum: ["same_practice", "independent"]
+          },
+
+          extendsPracticeId: {
+            type: ["string", "null"]
+          },
+
+          basis: {
+            type: ["string", "null"]
+          }
+        },
+
+        required: [
+          "activityRefs",
+          "relation",
+          "extendsPracticeId",
+          "basis"
+        ]
+      }
+    },
+
+    practiceAnswers: {
+      type: "array",
+
+      items: {
+        type: "object",
+        additionalProperties: false,
+
+        properties: {
+          practiceId: {
+            type: ["string", "null"]
+          },
+
+          field: {
+            type: "string",
+            enum: ["reason", "sinceWhen", "frequency"]
+          },
+
+          scope: {
+            type: "string",
+            enum: ["practice", "activities"]
+          },
+
+          activityRefs: {
+            type: "array",
+            items: { type: "string" }
+          },
+
+          unknown: {
+            type: ["boolean", "null"]
+          },
+
+          value: {
+            type: ["string", "null"]
+          }
+        },
+
+        required: [
+          "practiceId",
+          "field",
+          "scope",
+          "activityRefs",
+          "unknown",
+          "value"
+        ]
+      }
     }
   },
 
@@ -2238,7 +2521,10 @@ export const responseFormatSchema = {
     "changes",
     "uncertainties",
     "nextQuestion",
-    "validationRequest"
+    "validationRequest",
+    "responsibility",
+    "practiceHints",
+    "practiceAnswers"
   ]
 } as const;
 
@@ -2306,18 +2592,177 @@ function emptyProcessChanges(): ProcessChanges {
   };
 }
 
+function sanitizeLlmClassification(
+  response:
+    LlmProcessResponse
+): LlmProcessResponse {
+  // ==================================================
+  // REMOVE LEGACY WORKAROUND FIELDS FROM NEW ELEMENTS
+  // ==================================================
+
+  const addElements:
+    ProcessChanges["addElements"] =
+    response.changes
+      .addElements
+      .map(
+        (
+          element
+        ) => {
+          const {
+            workaroundCandidate:
+            _workaroundCandidate,
+
+            workaroundConfirmed:
+            _workaroundConfirmed,
+
+            workaroundReason:
+            _workaroundReason,
+
+            workaroundCategory:
+            _workaroundCategory,
+
+            ...cleanElement
+          } =
+            element;
+
+          return cleanElement;
+        }
+      );
+
+
+  // ==================================================
+  // REMOVE LEGACY WORKAROUND FIELDS FROM UPDATES
+  // ==================================================
+
+  const updateElements:
+    ProcessChanges["updateElements"] =
+    response.changes
+      .updateElements
+      .map(
+        (
+          element
+        ) => {
+          const {
+            workaroundCandidate:
+            _workaroundCandidate,
+
+            workaroundConfirmed:
+            _workaroundConfirmed,
+
+            workaroundReason:
+            _workaroundReason,
+
+            workaroundCategory:
+            _workaroundCategory,
+
+            ...cleanElement
+          } =
+            element;
+
+          return cleanElement;
+        }
+      );
+
+
+  // ==================================================
+  // REMOVE LEGACY WORKAROUND QUESTIONS
+  // ==================================================
+
+  const hasLegacyWorkaroundQuestion =
+    response
+      .nextQuestion
+      .kind
+      .startsWith(
+        "workaround_"
+      );
+
+  const nextQuestion =
+    hasLegacyWorkaroundQuestion
+      ? {
+        required:
+          false,
+
+        kind:
+          "clarification" as const,
+
+        targetRefs:
+          [],
+
+        question:
+          ""
+      }
+      : response.nextQuestion;
+
+
+  // ==================================================
+  // REMOVE LEGACY WORKAROUND UNCERTAINTIES
+  // ==================================================
+
+  const uncertainties =
+    response.uncertainties
+      .filter(
+        (
+          uncertainty
+        ) =>
+          uncertainty.type !==
+          "workaround"
+      );
+
+
+  // ==================================================
+  // LEGACY INTENT NORMALIZATION
+  // ==================================================
+
+  const intent =
+    response.intent ===
+      "workaround_detail"
+      ? "answer_to_question"
+      : response.intent;
+
+
+  // ==================================================
+  // RETURN SAFE PROCESS-EXTRACTION RESULT
+  // ==================================================
+
+  return {
+    ...response,
+
+    intent,
+
+    changes: {
+      ...response.changes,
+
+      addElements,
+
+      updateElements,
+
+      /**
+       * Hard guarantee:
+       *
+       * LLM output can never change workaround state.
+       */
+      addWorkarounds:
+        [],
+
+      updateWorkarounds:
+        []
+    },
+
+    uncertainties,
+
+    nextQuestion
+  };
+}
+
 function buildClarificationResponse(
   lang: "de" | "en"
 ): LlmProcessResponse {
-  const de = lang === "de";
-
   return {
     language: lang,
     intent: "unclear",
 
-    assistantMessage: de
-      ? "Ich konnte die Eingabe leider nicht automatisch verarbeiten. Bitte versuchen Sie es noch einmal."
-      : "I was unable to process the input automatically. Please try again.",
+    assistantMessage:
+      "I was unable to process the input automatically. Please try again.",
 
     contextPatch: {},
 
@@ -2335,9 +2780,8 @@ function buildClarificationResponse(
       required: true,
       kind: "clarification",
       targetRefs: [],
-      question: de
-        ? "Können Sie die Prozessinformation bitte noch einmal formulieren?"
-        : "Could you please describe the process information again?"
+      question:
+        "Could you please describe the process information again?"
     },
 
     validationRequest: {
@@ -2636,8 +3080,6 @@ function applyCorrectionDirective(
   processModel: ProcessModel,
   lang: "de" | "en"
 ): LlmProcessResponse | undefined {
-  const isGerman = lang === "de";
-
   // ==================================================
   // RENAME ACTIVITY
   // ==================================================
@@ -2650,17 +3092,14 @@ function applyCorrectionDirective(
 
     // Activity could not be matched
     if (!task) {
-      const question = isGerman
-        ? "Welche konkrete Aktivität soll korrigiert werden?"
-        : "Which exact activity should be corrected?";
+      const question = "Which exact activity should be corrected?";
 
       return {
         language: lang,
         intent: "correction",
 
-        assistantMessage: isGerman
-          ? "Ich habe verstanden, dass eine Aktivität korrigiert werden soll, konnte sie im aktuellen Prozessmodell aber nicht eindeutig zuordnen. Welche konkrete Aktivität soll korrigiert werden?"
-          : "I understood that an activity should be corrected, but I could not match it to the current process model. Which exact activity should be corrected?",
+        assistantMessage:
+          "I understood that an activity should be corrected, but I could not match it to the current process model. Which exact activity should be corrected?",
 
         contextPatch: {},
 
@@ -2670,9 +3109,8 @@ function applyCorrectionDirective(
           {
             type: "reference",
             targetRefs: [],
-            description: isGerman
-              ? `Die zu korrigierende Aktivität "${directive.fromLabel}" konnte nicht eindeutig gefunden werden.`
-              : `The activity "${directive.fromLabel}" could not be matched unambiguously.`
+            description:
+              `The activity "${directive.fromLabel}" could not be matched unambiguously.`
           }
         ],
 
@@ -2711,9 +3149,8 @@ function applyCorrectionDirective(
       language: lang,
       intent: "correction",
 
-      assistantMessage: isGerman
-        ? `Verstanden: Ich habe die Aktivität "${task.name}" zu "${normalized}" korrigiert.`
-        : `Understood: I corrected "${task.name}" to "${normalized}".`,
+      assistantMessage:
+        `Understood: I corrected "${task.name}" to "${normalized}".`,
 
       contextPatch: {},
 
@@ -2750,17 +3187,14 @@ function applyCorrectionDirective(
 
   // Activity could not be matched
   if (!task) {
-    const question = isGerman
-      ? "Welche konkrete Aktivität soll entfernt werden?"
-      : "Which exact activity should be removed?";
+    const question = "Which exact activity should be removed?";
 
     return {
       language: lang,
       intent: "correction",
 
-      assistantMessage: isGerman
-        ? "Ich habe verstanden, dass eine Aktivität entfernt werden soll, konnte sie im aktuellen Prozessmodell aber nicht eindeutig zuordnen. Welche konkrete Aktivität soll entfernt werden?"
-        : "I understood that an activity should be removed, but I could not match it to the current process model. Which exact activity should be removed?",
+      assistantMessage:
+        "I understood that an activity should be removed, but I could not match it to the current process model. Which exact activity should be removed?",
 
       contextPatch: {},
 
@@ -2770,9 +3204,8 @@ function applyCorrectionDirective(
         {
           type: "reference",
           targetRefs: [],
-          description: isGerman
-            ? `Die zu entfernende Aktivität "${directive.targetLabel}" konnte nicht eindeutig gefunden werden.`
-            : `The activity "${directive.targetLabel}" could not be matched unambiguously.`
+          description:
+            `The activity "${directive.targetLabel}" could not be matched unambiguously.`
         }
       ],
 
@@ -2856,9 +3289,8 @@ function applyCorrectionDirective(
     language: lang,
     intent: "correction",
 
-    assistantMessage: isGerman
-      ? `Verstanden: Ich habe die Aktivität "${task.name}" aus dem Prozessmodell entfernt.`
-      : `Understood: I removed activity "${task.name}" from the process model.`,
+    assistantMessage:
+      `Understood: I removed activity "${task.name}" from the process model.`,
 
     contextPatch: {},
 
@@ -2893,41 +3325,107 @@ function applyCorrectionDirective(
   };
 }
 
-export function decomposeEmployeeMessage(message: string): ExtractedFacts {
-  const cleaned = cleanText(message);
-  const trigger = looksLikeProcessTrigger(cleaned);
-  const conditioned = extractConditionPart(cleaned);
+export function decomposeEmployeeMessage(
+  message: string
+): ExtractedFacts {
+  const cleaned =
+    cleanText(
+      message
+    );
 
-  const activityParts = splitActivityCandidates(conditioned.remainder);
-  const activities = activityParts
-    .map((part): ExtractedActivity | undefined => {
-      const label = normalizeActivityLabel(part);
-      if (!label) {
-        return undefined;
-      }
-      const system = inferSystemFromText(part);
-      return {
-        label,
-        ...(system ? { system } : {})
-      };
-    })
-    .filter((value): value is ExtractedActivity => value !== undefined);
+  const trigger =
+    looksLikeProcessTrigger(
+      cleaned
+    );
 
-  const confirmation = isExplicitConfirmation(cleaned)
-    ? "confirm"
-    : hasExplicitRejection(cleaned)
-      ? "reject"
-      : "none";
+  const conditioned =
+    extractConditionPart(
+      cleaned
+    );
 
-  const workaroundEvidence = detectWorkaroundSignal(cleaned);
+  const activityParts =
+    splitActivityCandidates(
+      conditioned.remainder
+    );
+
+  const activities =
+    activityParts
+      .map(
+        (
+          part
+        ):
+          ExtractedActivity |
+          undefined => {
+          const label =
+            normalizeActivityLabel(
+              part
+            );
+
+          if (
+            !label
+          ) {
+            return undefined;
+          }
+
+          const system =
+            inferSystemFromText(
+              part
+            );
+
+          return {
+            label,
+
+            ...(system
+              ? {
+                system
+              }
+              : {})
+          };
+        }
+      )
+      .filter(
+        (
+          value
+        ): value is
+          ExtractedActivity =>
+          value !==
+          undefined
+      );
+
+  const confirmation =
+    isExplicitConfirmation(
+      cleaned
+    )
+      ? "confirm"
+      : hasExplicitRejection(
+        cleaned
+      )
+        ? "reject"
+        : "none";
 
   return {
     trigger,
+
     activities,
-    hasCondition: Boolean(conditioned.condition),
-    conditionText: conditioned.condition,
+
+    hasCondition:
+      Boolean(
+        conditioned.condition
+      ),
+
+    conditionText:
+      conditioned.condition,
+
     confirmation,
-    workaroundEvidence
+
+    /**
+     * Legacy compatibility.
+     *
+     * Technical deviations now come exclusively from
+     * conformance checking.
+     */
+    workaroundEvidence:
+      false
   };
 }
 
@@ -2959,253 +3457,29 @@ export function fallbackResponse(
   userMessage: string,
   processModel: ProcessModel
 ): LlmProcessResponse {
-  const lang = detectLanguage(userMessage);
-  const isGerman = lang === "de";
-
-  const facts = decomposeEmployeeMessage(userMessage);
+  const lang =
+    detectLanguage(
+      userMessage
+    );
 
   const correctionDirective =
-    extractCorrectionDirective(userMessage);
-
-  // ==================================================
-  // FIND PENDING STRUCTURED WORKAROUND
-  // ==================================================
-
-  const pendingWorkaround =
-    processModel.workarounds.find(
-      (workaround) =>
-        workaround.status === "suspected"
+    extractCorrectionDirective(
+      userMessage
     );
-
-  // ==================================================
-  // LEGACY FALLBACK:
-  // Support old task-level workaround state as long as
-  // parts of the application still use it.
-  // ==================================================
-
-  const pendingLegacyWorkaroundTask =
-    processModel.elements.find(
-      (
-        element
-      ): element is Extract<
-        ProcessModel["elements"][number],
-        { type: "task" }
-      > =>
-        element.type === "task" &&
-        element.workaroundCandidate === true &&
-        element.workaroundConfirmed !== true
-    );
-
-  // ==================================================
-  // CONFIRM STRUCTURED WORKAROUND
-  // ==================================================
-
-  if (
-    pendingWorkaround &&
-    facts.confirmation === "confirm"
-  ) {
-    return {
-      language: lang,
-      intent: "confirmation",
-
-      assistantMessage: isGerman
-        ? "Verstanden. Ich habe den vermuteten Workaround als bestätigt markiert."
-        : "Understood. I marked the suspected workaround as confirmed.",
-
-      contextPatch: {},
-
-      changes: {
-        ...emptyProcessChanges(),
-
-        updateWorkarounds: [
-          {
-            id: pendingWorkaround.id,
-            status: "confirmed"
-          }
-        ]
-      },
-
-      uncertainties: [],
-
-      nextQuestion: {
-        required: false,
-        kind: "clarification",
-        targetRefs: [],
-        question: ""
-      },
-
-      validationRequest: {
-        required: false,
-        elementIds: [],
-        question: ""
-      }
-    };
-  }
-
-  // ==================================================
-  // REJECT STRUCTURED WORKAROUND
-  // ==================================================
-
-  if (
-    pendingWorkaround &&
-    facts.confirmation === "reject"
-  ) {
-    return {
-      language: lang,
-      intent: "rejection",
-
-      assistantMessage: isGerman
-        ? "Verstanden. Ich habe den vermuteten Workaround verworfen."
-        : "Understood. I rejected the suspected workaround.",
-
-      contextPatch: {},
-
-      changes: {
-        ...emptyProcessChanges(),
-
-        updateWorkarounds: [
-          {
-            id: pendingWorkaround.id,
-            status: "rejected"
-          }
-        ]
-      },
-
-      uncertainties: [],
-
-      nextQuestion: {
-        required: false,
-        kind: "clarification",
-        targetRefs: [],
-        question: ""
-      },
-
-      validationRequest: {
-        required: false,
-        elementIds: [],
-        question: ""
-      }
-    };
-  }
-
-  // ==================================================
-  // LEGACY TASK-LEVEL WORKAROUND CONFIRMATION
-  // ==================================================
-  //
-  // This can later be removed once the whole application
-  // uses processModel.workarounds exclusively.
-  // ==================================================
-
-  if (
-    !pendingWorkaround &&
-    pendingLegacyWorkaroundTask &&
-    facts.confirmation === "confirm"
-  ) {
-    return {
-      language: lang,
-      intent: "confirmation",
-
-      assistantMessage: isGerman
-        ? `Verstanden. Ich habe den Workaround bei "${pendingLegacyWorkaroundTask.name}" bestätigt.`
-        : `Understood. I confirmed the workaround for "${pendingLegacyWorkaroundTask.name}".`,
-
-      contextPatch: {},
-
-      changes: {
-        ...emptyProcessChanges(),
-
-        updateElements: [
-          {
-            id:
-              pendingLegacyWorkaroundTask.id,
-
-            workaroundCandidate:
-              true,
-
-            workaroundConfirmed:
-              true
-          }
-        ]
-      },
-
-      uncertainties: [],
-
-      nextQuestion: {
-        required: false,
-        kind: "clarification",
-        targetRefs: [],
-        question: ""
-      },
-
-      validationRequest: {
-        required: false,
-        elementIds: [],
-        question: ""
-      }
-    };
-  }
-
-  // ==================================================
-  // LEGACY TASK-LEVEL WORKAROUND REJECTION
-  // ==================================================
-
-  if (
-    !pendingWorkaround &&
-    pendingLegacyWorkaroundTask &&
-    facts.confirmation === "reject"
-  ) {
-    return {
-      language: lang,
-      intent: "rejection",
-
-      assistantMessage: isGerman
-        ? `Verstanden. Die Aktivität "${pendingLegacyWorkaroundTask.name}" wird nicht als Workaround behandelt.`
-        : `Understood. The activity "${pendingLegacyWorkaroundTask.name}" will not be treated as a workaround.`,
-
-      contextPatch: {},
-
-      changes: {
-        ...emptyProcessChanges(),
-
-        updateElements: [
-          {
-            id:
-              pendingLegacyWorkaroundTask.id,
-
-            workaroundCandidate:
-              false,
-
-            workaroundConfirmed:
-              false,
-
-            workaroundReason:
-              ""
-          }
-        ]
-      },
-
-      uncertainties: [],
-
-      nextQuestion: {
-        required: false,
-        kind: "clarification",
-        targetRefs: [],
-        question: ""
-      },
-
-      validationRequest: {
-        required: false,
-        elementIds: [],
-        question: ""
-      }
-    };
-  }
 
   // ==================================================
   // CORRECTION
   // ==================================================
+  //
+  // The deterministic fallback may still process clear
+  // corrections to the AS-IS model.
+  //
+  // It must NOT detect, confirm or reject workarounds.
+  // ==================================================
 
-  if (correctionDirective) {
+  if (
+    correctionDirective
+  ) {
     const correctionResponse =
       applyCorrectionDirective(
         correctionDirective,
@@ -3213,46 +3487,63 @@ export function fallbackResponse(
         lang
       );
 
-    if (correctionResponse) {
+    if (
+      correctionResponse
+    ) {
       return correctionResponse;
     }
 
-    const question = isGerman
-      ? "Welche konkrete Aktivität soll korrigiert werden?"
-      : "Which exact activity should be corrected?";
+    const question = "Which exact activity should be corrected?";
 
     return {
-      language: lang,
-      intent: "correction",
+      language:
+        lang,
 
-      assistantMessage: isGerman
-        ? "Ich habe verstanden, dass etwas im Prozessmodell korrigiert werden soll, konnte die betroffene Aktivität aber nicht eindeutig bestimmen."
-        : "I understood that something in the process model should be corrected, but I could not identify the affected activity.",
+      intent:
+        "correction",
 
-      contextPatch: {},
+      assistantMessage:
+        "I understood that something in the process model should be corrected, but I could not identify the affected activity.",
 
-      changes: emptyProcessChanges(),
+      contextPatch:
+        {},
+
+      changes:
+        emptyProcessChanges(),
 
       uncertainties: [
         {
-          type: "reference",
-          targetRefs: [],
-          description: isGerman
-            ? "Die zu korrigierende Aktivität konnte nicht eindeutig identifiziert werden."
-            : "The activity to be corrected could not be identified unambiguously."
+          type:
+            "reference",
+
+          targetRefs:
+            [],
+
+          description:
+            "The activity to be corrected could not be identified unambiguously."
         }
       ],
 
       nextQuestion: {
-        required: true,
-        kind: "clarification",
-        targetRefs: [],
+        required:
+          true,
+
+        kind:
+          "clarification",
+
+        targetRefs:
+          [],
+
         question
       },
 
       validationRequest: {
-        required: true,
-        elementIds: [],
+        required:
+          true,
+
+        elementIds:
+          [],
+
         question
       }
     };
@@ -3262,14 +3553,14 @@ export function fallbackResponse(
   // NO OPENAI SEMANTIC EXTRACTION AVAILABLE
   // ==================================================
   //
-  // IMPORTANT:
-  // Do NOT generate tasks heuristically here.
+  // Do not create activities heuristically.
   //
-  // This avoids silently producing an incorrect BPMN
-  // model when OpenAI configuration/parsing failed.
+  // Do not derive workarounds or deviations here.
   // ==================================================
 
-  return buildClarificationResponse(lang);
+  return buildClarificationResponse(
+    lang
+  );
 }
 
 
@@ -3286,14 +3577,28 @@ export async function proposeProcessChanges(params: {
   messages: ChatMessage[];
   processModel: ProcessModel;
   elicitationPhase?: string;
-  pendingQuestion?: { question: string } | null;
+  pendingQuestion?: {
+    question: string;
+    kind?: string;
+    targetIds?: string[];
+    practiceId?: string;
+    practiceField?: string;
+  } | null;
+  responsibilityContext?: {
+    intervieweeRole?: { laneId: string; name: string };
+    currentRole?: { laneId: string; name: string };
+    distinctionDeclined?: boolean;
+  };
+  practiceContext?: string;
 }): Promise<LlmProcessResponse> {
   const {
     userMessage,
     messages,
     processModel,
     elicitationPhase,
-    pendingQuestion
+    pendingQuestion,
+    responsibilityContext,
+    practiceContext
   } = params;
 
   const lang = detectLanguage(userMessage);
@@ -3325,6 +3630,16 @@ export async function proposeProcessChanges(params: {
       ? [
         "Pending question:",
         pendingQuestion.question,
+        ...(pendingQuestion.targetIds?.length
+          ? [
+            `The pending question concerns these element IDs: ${pendingQuestion.targetIds.join(", ")}`
+          ]
+          : []),
+        ...(pendingQuestion.practiceId
+          ? [
+            `The pending question asks for "${pendingQuestion.practiceField}" of practice ${pendingQuestion.practiceId}. Report the answer in practiceAnswers with that practiceId; use scope "activities" if the employee limits it to some steps.`
+          ]
+          : []),
         "",
         "Interpret the latest employee message as a possible answer",
         "to this pending question before deciding whether it contains",
@@ -3343,6 +3658,44 @@ export async function proposeProcessChanges(params: {
     }`,
 
     pendingContext,
+
+    ...(practiceContext ? [practiceContext] : []),
+
+    ...(
+      responsibilityContext?.intervieweeRole
+        ? [
+          `Established responsibility: the employee belongs to "${responsibilityContext.intervieweeRole.name}" (lane ${responsibilityContext.intervieweeRole.laneId}). "I", "we", "us", "our team" and "still us" refer to this role, not to the most recently mentioned participant.`
+        ]
+        : []
+    ),
+
+    ...(
+      responsibilityContext?.currentRole
+        ? [
+          `Current responsibility (lane of the latest activity): "${responsibilityContext.currentRole.name}" (lane ${responsibilityContext.currentRole.laneId}). Activities that continue without a stated change belong to it.`
+        ]
+        : []
+    ),
+
+    ...(
+      responsibilityContext?.distinctionDeclined
+        ? [
+          "The employee said no finer role distinction exists. Do not ask for a narrower role, team, person or job title."
+        ]
+        : []
+    ),
+
+    ...(
+      processModel.lanes.length > 0 &&
+        processModel.elements.some((element) => !element.laneId)
+        ? [
+          `Elements without a responsibility (drawn in the visual "Unassigned" band, which is not a lane): ${processModel.elements
+            .filter((element) => !element.laneId)
+            .map((element) => `${element.id} (${element.name})`)
+            .join(", ")}`
+        ]
+        : []
+    ),
 
     "Current ProcessModel JSON:",
     JSON.stringify(processModel, null, 2),
@@ -3366,8 +3719,12 @@ export async function proposeProcessChanges(params: {
       "- Use tempRefs for multiple new elements in one response.",
       "- Connect new elements using addFlows.",
       "- A confirmation or rejection must not create a task.",
-      "- A suspected workaround must not be automatically confirmed.",
-      "- Respond in the employee's language."
+      "- Do not classify any behavior as a workaround or deviation.",
+      "- Always return addWorkarounds: [] and updateWorkarounds: [].",
+      "- Always return null for legacy task-level workaround fields.",
+      "- Do not ask whether an activity is a workaround.",
+      "- Conformance checking and Process Owner review handle deviation/workaround classification.",
+      "- Always write assistantMessage, nextQuestion.question, and validationRequest.question in English, regardless of the employee's language."
     ].join("\n")
   ].join("\n\n");
 
@@ -3544,7 +3901,10 @@ export async function proposeProcessChanges(params: {
     // Successful semantic extraction
     // --------------------------------------------------
 
-    const result = validated.data;
+    const result =
+      sanitizeLlmClassification(
+        validated.data
+      );
 
     if (isDev) {
       console.info(

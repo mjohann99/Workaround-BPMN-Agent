@@ -17,7 +17,7 @@ const messages: ChatMessage[] = [
   {
     id: "msg_0",
     role: "assistant",
-    content: "Was löst den Prozess aus?",
+    content: "What usually triggers this process?",
     timestamp: new Date().toISOString()
   }
 ];

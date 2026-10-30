@@ -450,12 +450,12 @@ button:disabled {
 }
 
 /* ======================================================
-   WORKAROUND OVERLAYS
+   OWNER ANALYSIS OVERLAYS
    ====================================================== */
 
-.workaround-overlay {
-  width: 20px;
-  height: 20px;
+.deviation-overlay {
+  width: 22px;
+  height: 22px;
 
   border-radius: 50%;
 
@@ -466,35 +466,44 @@ button:disabled {
   font-size: 0.72rem;
   font-weight: 700;
 
-  color: #fff;
+  color: #ffffff;
 
   box-shadow:
     0 2px 8px
     rgba(0, 0, 0, 0.22);
 }
 
-.workaround-overlay.candidate {
-  background: var(--warn);
+.deviation-overlay.candidate {
+  background:
+    var(--warn);
 }
 
-.workaround-overlay.confirmed {
-  background: var(--ok);
+.deviation-overlay.confirmed {
+  background:
+    var(--ok);
 }
+
 
 /* ======================================================
-   BPMN WORKAROUND HIGHLIGHTING
+   OWNER BPMN ANALYSIS HIGHLIGHTING
    ====================================================== */
 
-.djs-element.task-workaround-candidate
+.djs-element.deviation-candidate
 .djs-visual > :nth-child(1) {
-  stroke: var(--warn) !important;
-  stroke-width: 3 !important;
+  stroke:
+    var(--warn) !important;
+
+  stroke-width:
+    3px !important;
 }
 
-.djs-element.task-workaround-confirmed
+.djs-element.deviation-confirmed
 .djs-visual > :nth-child(1) {
-  stroke: var(--ok) !important;
-  stroke-width: 3 !important;
+  stroke:
+    var(--ok) !important;
+
+  stroke-width:
+    3px !important;
 }
 
 /* ======================================================
@@ -548,4 +557,2053 @@ button:disabled {
   .diagram-container {
     min-height: 0;
   }
+}
+/* =====================================================
+   APP LAYOUT
+   ===================================================== */
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  overflow: hidden;
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+button,
+textarea,
+input {
+  font: inherit;
+}
+
+.app-shell {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f5f7fa;
+  overflow: hidden;
+}
+
+/* =====================================================
+   HEADER
+   ===================================================== */
+
+.topbar {
+  flex: 0 0 auto;
+  min-height: 82px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 14px 24px;
+
+  background: white;
+  border-bottom: 1px solid #dfe3e8;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.topbar p {
+  margin: 4px 0 0;
+  color: #667085;
+  font-size: 14px;
+}
+
+.session-info {
+  max-width: 320px;
+  color: #667085;
+  font-size: 12px;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* =====================================================
+   MAIN TWO-COLUMN LAYOUT
+   ===================================================== */
+
+.main-layout {
+  min-height: 0;
+  flex: 1;
+
+  display: grid;
+
+  /*
+   * Chat links,
+   * BPMN nimmt den größeren rechten Bereich ein.
+   */
+  grid-template-columns:
+    minmax(360px, 32%)
+    minmax(0, 68%);
+
+  gap: 1px;
+
+  background: #dfe3e8;
+
+  overflow: hidden;
+}
+
+/* =====================================================
+   PANELS
+   ===================================================== */
+
+.chat-section,
+.bpmn-section {
+  min-width: 0;
+  min-height: 0;
+
+  display: flex;
+  flex-direction: column;
+
+  background: white;
+}
+
+.panel-header {
+  flex: 0 0 auto;
+
+  min-height: 70px;
+
+  display: flex;
+  align-items: center;
+
+  padding: 12px 18px;
+
+  border-bottom: 1px solid #eaecf0;
+}
+
+.panel-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.panel-header p {
+  margin: 4px 0 0;
+  color: #667085;
+  font-size: 12px;
+}
+
+/* =====================================================
+   CHAT
+   ===================================================== */
+
+.chat-scroll {
+  flex: 1;
+  min-height: 0;
+
+  overflow-y: auto;
+
+  padding: 18px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.message-row {
+  display: flex;
+  flex-direction: column;
+
+  max-width: 88%;
+}
+
+.assistant-message {
+  align-self: flex-start;
+}
+
+.employee-message {
+  align-self: flex-end;
+}
+
+.message-author {
+  margin-bottom: 5px;
+
+  font-size: 12px;
+  font-weight: 600;
+
+  color: #667085;
+}
+
+.employee-message .message-author {
+  text-align: right;
+}
+
+.message-bubble {
+  padding: 11px 14px;
+
+  border-radius: 12px;
+
+  line-height: 1.45;
+
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+
+  background: #f2f4f7;
+}
+
+.employee-message .message-bubble {
+  background: #e9f5f2;
+}
+
+/* =====================================================
+   CHAT INPUT
+   ===================================================== */
+
+.chat-composer {
+  flex: 0 0 auto;
+
+  padding: 14px;
+
+  display: flex;
+  gap: 10px;
+
+  border-top: 1px solid #eaecf0;
+
+  background: white;
+}
+
+.chat-composer textarea {
+  flex: 1;
+
+  min-width: 0;
+  min-height: 58px;
+  max-height: 150px;
+
+  resize: vertical;
+
+  padding: 10px 12px;
+
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+
+  outline: none;
+}
+
+.chat-composer textarea:focus {
+  border-color: #7faaa0;
+}
+
+.chat-composer button {
+  align-self: stretch;
+
+  min-width: 90px;
+
+  padding: 0 16px;
+
+  border: none;
+  border-radius: 8px;
+
+  background: #70ad9f;
+  color: white;
+
+  font-weight: 600;
+
+  cursor: pointer;
+}
+
+.chat-composer button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* =====================================================
+   BPMN
+   ===================================================== */
+
+.bpmn-wrapper {
+  flex: 1;
+
+  min-width: 0;
+  min-height: 0;
+
+  position: relative;
+
+  overflow: hidden;
+
+  background: #fafafa;
+}
+
+
+/* =====================================================
+   BPMN EDITOR ROOT
+   ===================================================== */
+
+.bpmn-editor {
+  position: relative;
+
+  width: 100%;
+  height: 100%;
+
+  min-width: 0;
+  min-height: 0;
+
+  overflow: hidden;
+
+  background: #ffffff;
+}
+
+
+/* =====================================================
+   BPMN-JS CANVAS
+   ===================================================== */
+
+.bpmn-editor > .bpmn-canvas {
+  position: absolute;
+
+  inset: 0;
+
+  width: 100%;
+  height: 100%;
+
+  min-width: 0;
+  min-height: 0;
+}
+
+
+/* =====================================================
+   BPMN-JS INTERNAL CONTAINER
+   ===================================================== */
+
+.bpmn-editor .djs-container {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+
+/* =====================================================
+   EMPLOYEE BPMN
+   ===================================================== */
+
+.bpmn-wrapper > .bpmn-editor {
+  width: 100%;
+  height: 100%;
+}
+
+
+/* =====================================================
+   OWNER REFERENCE BPMN
+   ===================================================== */
+
+.owner-reference-editor .bpmn-editor {
+  position: relative;
+
+  width: 100%;
+  height: 520px;
+  min-height: 520px;
+
+  margin-top: 20px;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+
+  background: #ffffff;
+
+  overflow: hidden;
+}
+
+
+/* =====================================================
+   OWNER AS-IS BPMN
+   ===================================================== */
+
+.owner-diagram .bpmn-editor {
+  width: 100%;
+  height: 100%;
+
+  min-height: 560px;
+}
+/* =====================================================
+   ERRORS / EMPTY
+   ===================================================== */
+
+.error-banner,
+.error-message {
+  flex: 0 0 auto;
+
+  padding: 10px 16px;
+
+  background: #fff2f0;
+  border-bottom: 1px solid #f5c2c0;
+
+  color: #9f2d27;
+}
+
+.empty-state,
+.empty {
+  width: 100%;
+  height: 100%;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  color: #667085;
+}
+
+/* =====================================================
+   RESPONSIVE
+   ===================================================== */
+
+@media (max-width: 900px) {
+  body {
+    overflow: auto;
+  }
+
+  .app-shell {
+    min-height: 100vh;
+    height: auto;
+    overflow: visible;
+  }
+
+  .main-layout {
+    display: flex;
+    flex-direction: column;
+
+    overflow: visible;
+  }
+
+  .chat-section {
+    min-height: 500px;
+  }
+
+  .bpmn-section {
+    min-height: 600px;
+  }
+
+  .bpmn-wrapper {
+    min-height: 520px;
+  }
+}
+/* =====================================================
+   PROCESS OWNER DASHBOARD
+   ===================================================== */
+
+.owner-view {
+  min-height: 100vh;
+  background:
+    linear-gradient(
+      135deg,
+      #f8fafc 0%,
+      #f1f5f9 55%,
+      #eefbf7 100%
+    );
+  color: #17212b;
+}
+
+
+/* =====================================================
+   HEADER
+   ===================================================== */
+
+.owner-view .app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 28px 36px 22px;
+
+  background: rgba(255, 255, 255, 0.92);
+
+  border-bottom: 1px solid #e2e8f0;
+
+  box-shadow:
+    0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.owner-view .app-header h1 {
+  margin: 0 0 6px;
+
+  font-size: 28px;
+  font-weight: 700;
+
+  letter-spacing: -0.03em;
+
+  color: #0f172a;
+}
+
+.owner-view .app-header p {
+  margin: 0;
+
+  font-size: 14px;
+
+  color: #64748b;
+}
+
+
+/* =====================================================
+   MAIN NAVIGATION
+   ===================================================== */
+
+.owner-navigation {
+  display: flex;
+  gap: 8px;
+
+  padding: 16px 36px;
+
+  background: rgba(255, 255, 255, 0.75);
+
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.owner-navigation button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+
+  padding: 9px 15px;
+
+  border: 1px solid transparent;
+  border-radius: 9px;
+
+  background: transparent;
+
+  color: #475569;
+
+  font-size: 14px;
+  font-weight: 600;
+
+  cursor: pointer;
+
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.owner-navigation button:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.owner-navigation button.active {
+  background: #0f766e;
+  color: white;
+
+  box-shadow:
+    0 2px 6px rgba(15, 118, 110, 0.18);
+}
+
+.navigation-count {
+  min-width: 20px;
+  height: 20px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 0 6px;
+
+  border-radius: 999px;
+
+  background: rgba(255, 255, 255, 0.22);
+
+  font-size: 11px;
+}
+
+
+/* =====================================================
+   REFERENCE PROCESS LAYOUT
+   ===================================================== */
+
+.owner-reference-layout {
+  display: grid;
+
+  grid-template-columns:
+    300px
+    minmax(0, 1fr)
+    320px;
+
+  gap: 20px;
+
+  min-height: calc(100vh - 150px);
+
+  padding: 24px 36px 36px;
+}
+
+.owner-reference-list,
+.owner-reference-editor,
+.owner-reference-overview {
+  min-width: 0;
+
+  background: rgba(255, 255, 255, 0.94);
+
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+
+  box-shadow:
+    0 4px 18px rgba(15, 23, 42, 0.05);
+
+  overflow: hidden;
+}
+
+.owner-reference-list {
+  padding: 20px;
+}
+
+.owner-reference-editor {
+  position: relative;
+
+  min-width: 0;
+  min-height: 680px;
+
+  display: flex;
+  flex-direction: column;
+
+  padding: 24px;
+
+  overflow: hidden;
+}
+
+.owner-reference-overview {
+  padding: 20px;
+}
+
+
+/* =====================================================
+   SESSION LAYOUT
+   ===================================================== */
+
+.owner-session-layout {
+  display: grid;
+
+  grid-template-columns:
+    300px
+    minmax(0, 1fr);
+
+  gap: 20px;
+
+  padding: 24px 36px 36px;
+
+  min-height: calc(100vh - 150px);
+}
+
+.owner-session-list,
+.owner-session-content {
+  min-width: 0;
+
+  background: rgba(255, 255, 255, 0.94);
+
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+
+  box-shadow:
+    0 4px 18px rgba(15, 23, 42, 0.05);
+
+  overflow: hidden;
+}
+
+.owner-session-list {
+  padding: 18px;
+}
+
+.owner-session-content {
+  padding: 22px;
+}
+
+
+/* =====================================================
+   SECTION HEADERS
+   ===================================================== */
+
+.owner-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 12px;
+
+  margin-bottom: 16px;
+}
+
+.owner-section-header h2 {
+  margin: 0;
+
+  font-size: 16px;
+  font-weight: 700;
+
+  color: #0f172a;
+}
+
+.owner-section-header > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  min-width: 26px;
+  height: 26px;
+
+  padding: 0 8px;
+
+  border-radius: 999px;
+
+  background: #e2e8f0;
+
+  color: #475569;
+
+  font-size: 12px;
+  font-weight: 700;
+}
+
+
+/* =====================================================
+   SESSION CARDS
+   ===================================================== */
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+
+  gap: 9px;
+}
+
+.session-card {
+  width: 100%;
+
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+
+  gap: 5px;
+
+  padding: 13px 14px;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+
+  background: #ffffff;
+
+  text-align: left;
+
+  cursor: pointer;
+
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+
+.session-card:hover {
+  border-color: #94a3b8;
+
+  box-shadow:
+    0 3px 10px rgba(15, 23, 42, 0.06);
+
+  transform: translateY(-1px);
+}
+
+.session-card.selected {
+  border-color: #0f766e;
+
+  background: #f0fdfa;
+
+  box-shadow:
+    inset 3px 0 0 #0f766e;
+}
+
+.session-card strong {
+  color: #0f172a;
+
+  font-size: 14px;
+}
+
+.session-card span {
+  color: #475569;
+
+  font-size: 12px;
+}
+
+.session-card small {
+  color: #94a3b8;
+
+  font-size: 11px;
+}
+
+
+/* =====================================================
+   SESSION HEADER
+   ===================================================== */
+
+.owner-session-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+
+  gap: 24px;
+
+  margin-bottom: 18px;
+
+  padding-bottom: 18px;
+
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.owner-session-header h2 {
+  margin: 0 0 5px;
+
+  color: #0f172a;
+
+  font-size: 22px;
+}
+
+.owner-session-header small {
+  color: #94a3b8;
+}
+
+
+/* =====================================================
+   REFERENCE ASSIGNMENT
+   ===================================================== */
+
+.reference-assignment {
+  display: flex;
+  flex-direction: column;
+
+  gap: 6px;
+
+  min-width: 260px;
+
+  font-size: 12px;
+  font-weight: 600;
+
+  color: #475569;
+}
+
+.reference-assignment select {
+  width: 100%;
+
+  padding: 9px 11px;
+
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+
+  background: white;
+
+  color: #0f172a;
+
+  font: inherit;
+
+  outline: none;
+}
+
+.reference-assignment select:focus {
+  border-color: #0f766e;
+
+  box-shadow:
+    0 0 0 3px rgba(15, 118, 110, 0.12);
+}
+
+
+/* =====================================================
+   OWNER SUMMARY
+   ===================================================== */
+
+.owner-summary {
+  display: grid;
+
+  grid-template-columns:
+    repeat(5, minmax(120px, 1fr));
+
+  gap: 12px;
+
+  margin-bottom: 20px;
+}
+
+.owner-summary > div {
+  padding: 14px 16px;
+
+  background: #f8fafc;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.owner-summary strong {
+  display: block;
+
+  margin-bottom: 6px;
+
+  color: #64748b;
+
+  font-size: 11px;
+  font-weight: 700;
+
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.owner-summary p {
+  margin: 0;
+
+  color: #0f172a;
+
+  font-size: 15px;
+  font-weight: 600;
+}
+
+
+/* =====================================================
+   BPMN + DEVIATIONS
+   ===================================================== */
+
+.owner-session-workspace {
+  display: grid;
+
+  grid-template-columns:
+    minmax(0, 1fr)
+    330px;
+
+  gap: 18px;
+
+  min-height: 560px;
+
+  margin-bottom: 20px;
+}
+
+.owner-diagram {
+  position: relative;
+
+  min-width: 0;
+  min-height: 560px;
+
+  height: 560px;
+
+  background: #ffffff;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+
+  overflow: hidden;
+}
+
+.owner-sidebar {
+  min-width: 0;
+
+  padding: 16px;
+
+  background: #f8fafc;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+
+  overflow-y: auto;
+}
+
+
+/* =====================================================
+   EMPTY STATES
+   ===================================================== */
+
+.owner-view .empty {
+  width: 100%;
+  min-height: 180px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 28px;
+
+  color: #64748b;
+
+  font-size: 13px;
+
+  text-align: center;
+}
+
+
+/* =====================================================
+   ERROR MESSAGE
+   ===================================================== */
+
+.owner-view .error-message {
+  margin: 16px 36px 0;
+
+  padding: 12px 16px;
+
+  border: 1px solid #fecaca;
+  border-radius: 9px;
+
+  background: #fef2f2;
+
+  color: #b91c1c;
+
+  font-size: 13px;
+}
+
+
+/* =====================================================
+   RESPONSIVE
+   ===================================================== */
+
+@media (
+  max-width: 1200px
+) {
+  .owner-reference-layout {
+    grid-template-columns:
+      250px
+      minmax(0, 1fr);
+  }
+
+  .owner-reference-overview {
+    grid-column:
+      1 / -1;
+  }
+
+  .owner-summary {
+    grid-template-columns:
+      repeat(
+        3,
+        minmax(130px, 1fr)
+      );
+  }
+}
+
+
+@media (
+  max-width: 900px
+) {
+  .owner-reference-layout,
+  .owner-session-layout,
+  .owner-session-workspace {
+    grid-template-columns:
+      1fr;
+  }
+
+  .owner-summary {
+    grid-template-columns:
+      repeat(
+        2,
+        minmax(120px, 1fr)
+      );
+  }
+
+  .owner-session-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .reference-assignment {
+    min-width: 0;
+    width: 100%;
+  }
+}
+
+
+@media (
+  max-width: 600px
+) {
+  .owner-view .app-header,
+  .owner-navigation,
+  .owner-reference-layout,
+  .owner-session-layout {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .owner-summary {
+    grid-template-columns:
+      1fr;
+  }
+}
+/* ======================================================
+   OWNER ANALYSIS OVERLAYS
+   ====================================================== */
+
+.deviation-overlay {
+  width: 22px;
+  height: 22px;
+
+  border-radius: 50%;
+
+  display: grid;
+
+  place-items: center;
+
+  font-size: 0.72rem;
+  font-weight: 700;
+
+  color: #ffffff;
+
+  box-shadow:
+    0 2px 8px
+    rgba(0, 0, 0, 0.22);
+}
+
+.deviation-overlay.candidate {
+  background:
+    var(--warn);
+}
+
+.deviation-overlay.confirmed {
+  background:
+    var(--ok);
+}
+
+
+/* ======================================================
+   OWNER BPMN ANALYSIS HIGHLIGHTING
+   ====================================================== */
+
+.djs-element.deviation-candidate
+.djs-visual > :nth-child(1) {
+  stroke:
+    var(--warn) !important;
+
+  stroke-width:
+    3px !important;
+}
+
+.djs-element.deviation-confirmed
+.djs-visual > :nth-child(1) {
+  stroke:
+    var(--ok) !important;
+
+  stroke-width:
+    3px !important;
+}
+body:has(.owner-view) {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.owner-view {
+  width: 100%;
+  min-height: 100vh;
+
+  overflow-x: hidden;
+}
+/* ======================================================
+   REFERENCE PROCESS LIST
+   ====================================================== */
+
+.reference-process-list {
+  width: 100%;
+  height: 100%;
+
+  min-width: 0;
+  min-height: 0;
+
+  display: flex;
+  flex-direction: column;
+}
+
+
+/* ======================================================
+   HEADER
+   ====================================================== */
+
+.reference-process-list
+.owner-section-header {
+  flex: 0 0 auto;
+
+  margin-bottom: 18px;
+}
+
+.reference-process-list
+.owner-section-header > div {
+  min-width: 0;
+}
+
+.reference-process-list
+.owner-section-header h2 {
+  margin: 0 0 4px;
+
+  font-family:
+    "Space Grotesk",
+    sans-serif;
+
+  font-size: 16px;
+  font-weight: 700;
+
+  color: #0f172a;
+}
+
+.reference-process-list
+.owner-section-header p {
+  margin: 0;
+
+  font-size: 11px;
+  line-height: 1.4;
+
+  color: #667085;
+}
+
+
+/* ======================================================
+   CREATE PROCESS FORM
+   ====================================================== */
+
+.reference-process-create {
+  flex: 0 0 auto;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 8px;
+
+  margin-bottom: 18px;
+
+  padding: 12px;
+
+  background: #f8fafc;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.reference-process-create label {
+  display: flex;
+  flex-direction: column;
+
+  gap: 6px;
+
+  color: #475569;
+
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.reference-process-create input {
+  width: 100%;
+
+  min-height: 36px;
+
+  padding: 7px 9px;
+
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+
+  background: #ffffff;
+
+  color: #0f172a;
+
+  outline: none;
+
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.reference-process-create input:focus {
+  border-color: #0a7a63;
+
+  box-shadow:
+    0 0 0 3px
+    rgba(10, 122, 99, 0.10);
+}
+
+.reference-process-create input::placeholder {
+  color: #94a3b8;
+}
+
+.reference-process-create button {
+  width: 100%;
+
+  min-height: 36px;
+
+  margin: 0;
+
+  border-radius: 7px;
+
+  background: #0a7a63;
+
+  color: #ffffff;
+
+  font-size: 12px;
+}
+
+.reference-process-create button:hover:not(:disabled) {
+  background: #086b57;
+}
+
+
+/* ======================================================
+   LOCAL ERROR
+   ====================================================== */
+
+.reference-process-list
+.error-message {
+  margin: 0 0 14px;
+
+  padding: 9px 10px;
+
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+
+  background: #fef2f2;
+
+  color: #b91c1c;
+
+  font-size: 11px;
+}
+
+
+/* ======================================================
+   PROCESS CARD LIST
+   ====================================================== */
+
+.reference-process-cards {
+  flex: 1;
+
+  min-width: 0;
+  min-height: 0;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 9px;
+
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  padding-right: 3px;
+
+  scrollbar-gutter: stable;
+}
+
+
+/* ======================================================
+   PROCESS CARD
+   ====================================================== */
+
+.reference-process-card {
+  width: 100%;
+
+  flex: 0 0 auto;
+
+  display: block;
+
+  margin: 0;
+
+  padding: 12px;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+
+  background: #ffffff;
+
+  color: #17212b;
+
+  text-align: left;
+
+  box-shadow: none;
+
+  cursor: pointer;
+
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
+}
+
+.reference-process-card:hover {
+  transform: translateY(-1px);
+
+  background: #f8fafc;
+
+  border-color: #94a3b8;
+
+  box-shadow:
+    0 3px 10px
+    rgba(15, 23, 42, 0.06);
+}
+
+.reference-process-card.selected {
+  background: #f0fdfa;
+
+  border-color: #0a7a63;
+
+  box-shadow:
+    inset 3px 0 0 #0a7a63;
+}
+
+
+/* ======================================================
+   CARD HEADER
+   ====================================================== */
+
+.reference-process-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+
+  gap: 8px;
+
+  margin-bottom: 8px;
+}
+
+.reference-process-card-header > strong {
+  min-width: 0;
+
+  color: #0f172a;
+
+  font-size: 13px;
+  font-weight: 700;
+
+  line-height: 1.3;
+
+  overflow-wrap: anywhere;
+}
+
+
+/* ======================================================
+   STATUS
+   ====================================================== */
+
+.reference-process-card
+.reference-process-status {
+  flex-shrink: 0;
+
+  min-height: 22px;
+
+  padding: 3px 7px;
+
+  font-size: 9px;
+}
+
+
+/* ======================================================
+   DESCRIPTION
+   ====================================================== */
+
+.reference-process-description {
+  margin: 0 0 8px;
+
+  color: #64748b;
+
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+
+/* ======================================================
+   VERSION
+   ====================================================== */
+
+.reference-process-version {
+  display: inline-flex;
+  align-items: center;
+
+  min-height: 22px;
+
+  margin-bottom: 10px;
+
+  padding: 3px 7px;
+
+  border-radius: 6px;
+
+  background: #f1f5f9;
+
+  color: #475569;
+
+  font-size: 9px;
+  font-weight: 600;
+}
+
+
+/* ======================================================
+   METRICS
+   ====================================================== */
+
+.reference-process-metrics {
+  display: grid;
+
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+
+  gap: 6px;
+
+  margin-bottom: 9px;
+}
+
+.reference-process-metrics > div {
+  min-width: 0;
+
+  padding: 7px;
+
+  border-radius: 7px;
+
+  background: #f8fafc;
+
+  border: 1px solid #f1f5f9;
+}
+
+.reference-process-metrics strong {
+  display: block;
+
+  margin-bottom: 1px;
+
+  color: #0f172a;
+
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.reference-process-metrics span {
+  display: block;
+
+  color: #64748b;
+
+  font-size: 8px;
+  line-height: 1.25;
+}
+
+
+/* ======================================================
+   ALIASES
+   ====================================================== */
+
+.reference-process-aliases {
+  display: flex;
+  flex-wrap: wrap;
+
+  gap: 4px;
+
+  margin-bottom: 9px;
+}
+
+.reference-process-aliases span {
+  max-width: 100%;
+
+  padding: 3px 6px;
+
+  border-radius: 999px;
+
+  background: #ecfdf5;
+
+  border: 1px solid #d1fae5;
+
+  color: #047857;
+
+  font-size: 8px;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+/* ======================================================
+   LAST UPDATE
+   ====================================================== */
+
+.reference-process-updated {
+  display: block;
+
+  padding-top: 8px;
+
+  border-top: 1px solid #f1f5f9;
+
+  color: #94a3b8;
+
+  font-size: 8px;
+  line-height: 1.3;
+}
+
+
+/* ======================================================
+   EMPTY LIST
+   ====================================================== */
+
+.reference-process-list > .empty {
+  flex: 1;
+
+  min-height: 150px;
+
+  padding: 20px;
+
+  text-align: center;
+
+  color: #94a3b8;
+
+  font-size: 11px;
+  line-height: 1.45;
+}
+/* ======================================================
+   REFERENCE PROCESS EDITOR
+   ====================================================== */
+
+.reference-process-editor {
+  width: 100%;
+  height: 100%;
+
+  min-width: 0;
+  min-height: 0;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 18px;
+
+  padding: 26px;
+
+  background: #ffffff;
+}
+
+
+/* ======================================================
+   EDITOR HEADER
+   ====================================================== */
+
+.reference-process-editor-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+
+  gap: 24px;
+
+  padding-bottom: 18px;
+
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.reference-process-editor-header h2 {
+  margin: 0 0 5px;
+
+  font-family:
+    "Space Grotesk",
+    sans-serif;
+
+  font-size: 22px;
+
+  color: #0f172a;
+}
+
+.reference-process-editor-header p {
+  margin: 0;
+
+  font-size: 12px;
+
+  color: #667085;
+}
+
+
+.reference-version-badge {
+  flex-shrink: 0;
+
+  padding: 6px 10px;
+
+  border-radius: 999px;
+
+  background: #f1f5f9;
+
+  color: #475569;
+
+  font-size: 11px;
+  font-weight: 700;
+}
+
+
+/* ======================================================
+   METADATA
+   ====================================================== */
+
+.reference-process-metadata {
+  display: flex;
+  flex-direction: column;
+
+  gap: 14px;
+}
+
+
+.reference-name-editor {
+  display: flex;
+  align-items: flex-end;
+
+  gap: 10px;
+}
+
+.reference-name-editor label {
+  flex: 1;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 6px;
+
+  font-size: 11px;
+  font-weight: 600;
+
+  color: #475569;
+}
+
+.reference-name-editor input {
+  width: 100%;
+
+  min-height: 38px;
+
+  padding: 8px 10px;
+
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+
+  background: #ffffff;
+}
+
+.reference-name-editor button {
+  min-height: 38px;
+
+  white-space: nowrap;
+}
+
+
+/* ======================================================
+   PROCESS INFORMATION
+   ====================================================== */
+
+.reference-process-info {
+  display: grid;
+
+  grid-template-columns:
+    repeat(
+      3,
+      minmax(0, 1fr)
+    );
+
+  gap: 10px;
+}
+
+.reference-process-info > div {
+  padding: 11px 12px;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+
+  background: #f8fafc;
+}
+
+.reference-process-info span {
+  display: block;
+
+  margin-bottom: 4px;
+
+  font-size: 9px;
+  font-weight: 600;
+
+  text-transform: uppercase;
+
+  letter-spacing: 0.04em;
+
+  color: #94a3b8;
+}
+
+.reference-process-info strong {
+  display: block;
+
+  font-size: 12px;
+
+  color: #0f172a;
+}
+
+
+/* ======================================================
+   BPMN UPLOAD
+   ====================================================== */
+
+.reference-process-upload {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 20px;
+
+  padding: 14px 16px;
+
+  border: 1px solid #d9e6e2;
+  border-radius: 10px;
+
+  background: #f4fbf8;
+}
+
+
+.reference-process-upload-copy {
+  min-width: 0;
+}
+
+.reference-process-upload-copy strong {
+  display: block;
+
+  margin-bottom: 4px;
+
+  color: #0f172a;
+
+  font-size: 13px;
+}
+
+.reference-process-upload-copy p {
+  margin: 0;
+
+  max-width: 520px;
+
+  color: #667085;
+
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+
+.reference-process-upload-actions {
+  flex-shrink: 0;
+
+  display: flex;
+  align-items: center;
+
+  gap: 10px;
+}
+
+
+.reference-process-uploaded-file {
+  max-width: 220px;
+
+  padding: 6px 9px;
+
+  border-radius: 7px;
+
+  background: #ffffff;
+
+  border: 1px solid #d1fae5;
+
+  color: #047857;
+
+  font-size: 10px;
+
+  overflow: hidden;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+/* ======================================================
+   TOOLBAR
+   ====================================================== */
+
+.reference-process-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 20px;
+
+  min-height: 44px;
+
+  padding: 9px 12px;
+
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+
+  background: #f8fafc;
+}
+
+
+.reference-process-dirty-state {
+  color: #64748b;
+
+  font-size: 11px;
+}
+
+.reference-process-dirty-state strong {
+  color: #b45309;
+}
+
+
+.reference-process-toolbar-actions {
+  display: flex;
+
+  gap: 8px;
+}
+
+
+/* ======================================================
+   BPMN AREA
+   ====================================================== */
+
+.reference-process-bpmn {
+  position: relative;
+
+  width: 100%;
+
+  height: 520px;
+  min-height: 520px;
+
+  border: 1px solid #d8dee7;
+  border-radius: 10px;
+
+  background: #ffffff;
+
+  overflow: hidden;
+}
+
+
+.reference-process-bpmn
+.bpmn-editor {
+  width: 100%;
+  height: 100%;
+
+  min-height: 0;
+
+  margin: 0;
+
+  border: 0;
+}
+
+
+.reference-process-bpmn
+.bpmn-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+
+/* ======================================================
+   FOOTER
+   ====================================================== */
+
+.reference-process-editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 16px;
+
+  padding-top: 12px;
+
+  border-top: 1px solid #e2e8f0;
+
+  color: #94a3b8;
+}
+
+.reference-process-editor-footer small {
+  min-width: 0;
+
+  font-size: 9px;
+}
+
+.reference-process-editor-footer code {
+  overflow-wrap: anywhere;
+
+  color: #64748b;
+}
+
+
+/* ======================================================
+   RESPONSIVE
+   ====================================================== */
+
+@media (
+  max-width: 1000px
+) {
+  .reference-process-editor {
+    padding: 18px;
+  }
+
+  .reference-process-info {
+    grid-template-columns:
+      1fr;
+  }
+
+  .reference-process-upload,
+  .reference-process-toolbar {
+    align-items: stretch;
+
+    flex-direction: column;
+  }
+
+  .reference-process-upload-actions,
+  .reference-process-toolbar-actions {
+    width: 100%;
+  }
+}
+/* ======================================================
+   REFERENCE PROCESS DANGER ZONE
+   ====================================================== */
+
+.reference-process-danger-zone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 24px;
+
+  margin-top: 8px;
+
+  padding: 16px;
+
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+
+  background: #fffafa;
+}
+
+.reference-process-danger-zone > div {
+  min-width: 0;
+}
+
+.reference-process-danger-zone strong {
+  display: block;
+
+  margin-bottom: 4px;
+
+  color: #991b1b;
+
+  font-size: 12px;
+}
+
+.reference-process-danger-zone p {
+  margin: 0;
+
+  color: #7f1d1d;
+
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+
+/* Override normal green Owner button */
+
+.owner-view button.danger-button {
+  flex-shrink: 0;
+
+  background: #dc2626;
+
+  color: #ffffff;
+
+  border: 1px solid #dc2626;
+
+  box-shadow: none;
+}
+
+.owner-view button.danger-button:hover:not(:disabled) {
+  background: #b91c1c;
+
+  border-color: #b91c1c;
+}
+
+.owner-view button.danger-button:disabled {
+  background: #fca5a5;
+
+  border-color: #fca5a5;
+
+  cursor: not-allowed;
 }

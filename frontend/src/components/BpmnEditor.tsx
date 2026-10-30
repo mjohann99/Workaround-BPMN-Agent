@@ -9,23 +9,87 @@ import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn.css";
 
 import {
+  type BpmnEventDefinitionType,
   type ProcessElement,
   type ProcessModel,
   type SequenceFlow
 } from "../types";
 
+// Visual-only band emitted by the backend renderer; never a model lane.
+const UNASSIGNED_LANE_ID =
+  "Lane_unassigned_band";
+
+
+// ======================================================
+// PROPS
+// ======================================================
+
+export type BpmnHighlight = {
+  activityId:
+    string;
+
+  status:
+    | "candidate"
+    | "confirmed";
+};
+
+
+export type BpmnEditorMode =
+  | "employee"
+  | "owner";
+
+
+export type BpmnXmlImportMode =
+  | "display"
+  | "draft";
+
+
 type Props = {
-  xml: string;
-  process: ProcessModel;
+  xml:
+    string;
+
+  process:
+    ProcessModel;
+
+  mode:
+    BpmnEditorMode;
+
+  highlights?:
+    BpmnHighlight[];
 
   /**
-   * Wird nur bei einer tatsächlichen semantischen
-   * Änderung durch den Benutzer aufgerufen.
+   * display:
+   *
+   * Normal backend-generated BPMN XML.
+   *
+   * Importing it only updates the visualization and
+   * must not be interpreted as a manual process change.
+   *
+   *
+   * draft:
+   *
+   * Explicit BPMN upload by the Process Owner.
+   *
+   * After import the BPMN model is translated into the
+   * semantic ProcessModel and returned through
+   * onProcessChange().
    */
-  onProcessChange: (
-    process: ProcessModel
-  ) => void;
+  xmlImportMode?:
+    BpmnXmlImportMode;
+
+  onImportError?:
+    (
+      error:
+        Error
+    ) => void;
+
+  onProcessChange:
+    (
+      process:
+        ProcessModel
+    ) => void;
 };
+
 
 // ======================================================
 // BPMN-JS TYPES
@@ -33,127 +97,261 @@ type Props = {
 
 type BpmnCanvas = {
   zoom: (
-    arg: string
+    arg:
+      string
   ) => void;
 
   addMarker: (
-    elementId: string,
-    marker: string
+    elementId:
+      string,
+
+    marker:
+      string
   ) => void;
 
   removeMarker: (
-    elementId: string,
-    marker: string
+    elementId:
+      string,
+
+    marker:
+      string
   ) => void;
 };
+
 
 type BpmnOverlays = {
   add: (
-    elementId: string,
+    elementId:
+      string,
+
     options: {
       position: {
-        top?: number;
-        left?: number;
-        right?: number;
-        bottom?: number;
+        top?:
+          number;
+
+        left?:
+          number;
+
+        right?:
+          number;
+
+        bottom?:
+          number;
       };
 
-      html: string;
+      html:
+        string;
     }
   ) => void;
 
-  clear: () => void;
+  clear:
+    () => void;
 };
 
+
 type BpmnBusinessObject = {
-  id?: string;
+  id?:
+    string;
 
-  name?: string;
+  name?:
+    string;
 
-  $type?: string;
+  $type?:
+    string;
 
-  $parent?: BpmnBusinessObject;
+  $parent?:
+    BpmnBusinessObject;
 
   processRef?: {
-    id?: string;
+    id?:
+      string;
   };
 
   flowNodeRef?: Array<{
-    id?: string;
+    id?:
+      string;
   }>;
 
   sourceRef?: {
-    id?: string;
+    id?:
+      string;
   };
 
+  eventDefinitions?: Array<{
+    $type?:
+      string;
+  }>;
+
+  attachedToRef?: {
+    id?:
+      string;
+  };
+
+  cancelActivity?:
+    boolean;
+
   targetRef?: {
-    id?: string;
+    id?:
+      string;
   };
 };
 
+
 type BpmnElement = {
-  id: string;
+  id:
+    string;
 
-  type?: string;
+  type?:
+    string;
 
-  businessObject?: BpmnBusinessObject;
+  businessObject?:
+    BpmnBusinessObject;
 
   source?: {
-    id: string;
+    id:
+      string;
   };
 
   target?: {
-    id: string;
+    id:
+      string;
   };
 
-  parent?: BpmnElement;
+  parent?:
+    BpmnElement;
+
+  /**
+   * diagram-js represents text labels as separate
+   * registry elements.
+   *
+   * They point to the actual BPMN shape through
+   * labelTarget and frequently share its businessObject.
+   *
+   * These elements must NEVER become ProcessElements.
+   */
+  labelTarget?:
+    BpmnElement;
 };
+
 
 type ElementRegistry = {
-  getAll: () => BpmnElement[];
+  getAll:
+    () => BpmnElement[];
 
   get: (
-    id: string
-  ) => BpmnElement | undefined;
+    id:
+      string
+  ) =>
+    BpmnElement |
+    undefined;
 };
+
 
 type EventBusCallback =
   (...args: unknown[]) => void;
 
+
 type EventBus = {
   on: (
-    event: string,
-    callback: EventBusCallback
+    event:
+      string,
+
+    callback:
+      EventBusCallback
   ) => void;
 
   off: (
-    event: string,
-    callback: EventBusCallback
+    event:
+      string,
+
+    callback:
+      EventBusCallback
   ) => void;
 };
+
+// ======================================================
+// DIAGRAM LABEL
+// ======================================================
+//
+// elementRegistry.getAll() also contains graphical text
+// labels.
+//
+// Example:
+//
+// actual shape:
+//   element.id = "start_1"
+//   businessObject.id = "start_1"
+//   businessObject.$type = "bpmn:StartEvent"
+//
+// graphical label:
+//   element.id = "start_1_label"
+//   element.type = "label"
+//   businessObject.id = "start_1"
+//   businessObject.$type = "bpmn:StartEvent"
+//
+// Without filtering the label, the same semantic BPMN
+// element would be inserted twice into ProcessModel.
+// ======================================================
+
+function isDiagramLabel(
+  element:
+    BpmnElement
+): boolean {
+  return (
+    element.type ===
+      "label" ||
+    Boolean(
+      element.labelTarget
+    )
+  );
+}
 
 // ======================================================
 // BPMN TYPE HELPERS
 // ======================================================
 
 function getBpmnType(
-  element: BpmnElement
+  element:
+    BpmnElement
 ): string | undefined {
+  /**
+   * Never interpret diagram-js labels as semantic BPMN
+   * elements.
+   *
+   * Their businessObject points to the actual task,
+   * event, gateway, participant, lane, etc.
+   */
+  if (
+    isDiagramLabel(
+      element
+    )
+  ) {
+    return undefined;
+  }
+
   return (
-    element.businessObject?.$type ??
+    element
+      .businessObject
+      ?.$type ??
     element.type
   );
 }
 
+
 function getElementType(
-  element: BpmnElement
+  element:
+    BpmnElement
 ):
   | ProcessElement["type"]
   | undefined {
   const type =
-    getBpmnType(element);
+    getBpmnType(
+      element
+    );
 
-  switch (type) {
+  switch (
+    type
+  ) {
     case "bpmn:StartEvent":
       return "start";
 
@@ -170,6 +368,15 @@ function getElementType(
     case "bpmn:ExclusiveGateway":
       return "exclusiveGateway";
 
+    case "bpmn:IntermediateCatchEvent":
+      return "intermediateCatchEvent";
+
+    case "bpmn:IntermediateThrowEvent":
+      return "intermediateThrowEvent";
+
+    case "bpmn:BoundaryEvent":
+      return "boundaryEvent";
+
     case "bpmn:EndEvent":
       return "end";
 
@@ -178,29 +385,92 @@ function getElementType(
   }
 }
 
+
+function getEventDefinitionType(
+  element:
+    BpmnElement
+): BpmnEventDefinitionType | undefined {
+  const definitionType =
+    element
+      .businessObject
+      ?.eventDefinitions
+      ?.[0]
+      ?.$type;
+
+  if (!definitionType) {
+    return undefined;
+  }
+
+  const suffix =
+    definitionType
+      .replace(
+        /^bpmn:/,
+        ""
+      )
+      .replace(
+        /EventDefinition$/,
+        ""
+      );
+
+  const normalized =
+    suffix === "compensate"
+      ? "compensation"
+      : suffix[0]?.toLowerCase() +
+        suffix.slice(1);
+
+  const supportedTypes: BpmnEventDefinitionType[] = [
+    "message",
+    "timer",
+    "error",
+    "escalation",
+    "conditional",
+    "link",
+    "signal",
+    "cancel",
+    "compensation",
+    "terminate",
+    "multiple",
+    "parallelMultiple"
+  ];
+
+  return supportedTypes.find(
+    (type) => type === normalized
+  );
+}
+
+
 function getElementId(
-  element: BpmnElement
+  element:
+    BpmnElement
 ): string {
   return (
-    element.businessObject?.id ??
+    element
+      .businessObject
+      ?.id ??
     element.id
   );
 }
+
 
 // ======================================================
 // EXECUTION TYPE
 // ======================================================
 
 function inferExecutionType(
-  element: BpmnElement
+  element:
+    BpmnElement
 ):
   | "human"
   | "automated"
   | undefined {
   const type =
-    getBpmnType(element);
+    getBpmnType(
+      element
+    );
 
-  switch (type) {
+  switch (
+    type
+  ) {
     case "bpmn:UserTask":
     case "bpmn:ManualTask":
       return "human";
@@ -215,13 +485,17 @@ function inferExecutionType(
   }
 }
 
+
 // ======================================================
 // BUILD PROCESS MODEL FROM BPMN-JS
 // ======================================================
 
 function buildProcessFromModeler(
-  modeler: BpmnModelerLib,
-  previousProcess: ProcessModel
+  modeler:
+    BpmnModelerLib,
+
+  previousProcess:
+    ProcessModel
 ): ProcessModel {
   const registry =
     modeler.get(
@@ -231,47 +505,68 @@ function buildProcessFromModeler(
   const bpmnElements =
     registry.getAll();
 
+
   // ====================================================
   // PARTICIPANTS / POOLS
   // ====================================================
 
   const participantElements =
     bpmnElements.filter(
-      (element) =>
-        getBpmnType(element) ===
+      (
+        element
+      ) =>
+        getBpmnType(
+          element
+        ) ===
         "bpmn:Participant"
     );
+
 
   let participants:
     ProcessModel["participants"] =
     participantElements.map(
-      (element) => {
+      (
+        element
+      ) => {
         const id =
-          getElementId(element);
+          getElementId(
+            element
+          );
 
         const oldParticipant =
-          previousProcess.participants.find(
-            (participant) =>
-              participant.id === id
-          );
+          previousProcess
+            .participants
+            .find(
+              (
+                participant
+              ) =>
+                participant.id ===
+                id
+            );
 
         const hasProcessRef =
           Boolean(
-            element.businessObject
-              ?.processRef?.id
+            element
+              .businessObject
+              ?.processRef
+              ?.id
           );
 
         return {
           id,
 
           name:
-            element.businessObject
-              ?.name?.trim() ||
-            oldParticipant?.name ||
+            element
+              .businessObject
+              ?.name
+              ?.trim() ||
+            oldParticipant
+              ?.name ||
             id,
 
           type:
-            oldParticipant?.type ??
+            oldParticipant
+              ?.type ??
             (
               hasProcessRef
                 ? "internal"
@@ -290,46 +585,64 @@ function buildProcessFromModeler(
       }
     );
 
-  /**
-   * Fallback für alte BPMN-Dokumente ohne
-   * Collaboration/Participant-Shapes.
-   */
+
+  // ====================================================
+  // FALLBACK FOR BPMN WITHOUT COLLABORATION
+  // ====================================================
+
   if (
-    participants.length === 0
+    participants.length ===
+    0
   ) {
     participants =
-      previousProcess.participants.map(
-        (participant) => ({
-          ...participant
-        })
-      );
+      previousProcess
+        .participants
+        .map(
+          (
+            participant
+          ) => ({
+            ...participant
+          })
+        );
   }
+
 
   const participantsById =
     new Map(
       participants.map(
-        (participant) => [
+        (
+          participant
+        ) => [
           participant.id,
           participant
         ]
       )
     );
 
+
   const defaultInternalParticipantId =
     participants.find(
-      (participant) =>
+      (
+        participant
+      ) =>
         participant.type ===
           "internal" &&
-        participant.processVisibility ===
+        participant
+          .processVisibility ===
           "white_box"
     )?.id;
 
-  // ----------------------------------------------------
-  // Map BPMN processRef -> participantId
-  // ----------------------------------------------------
+
+  // ====================================================
+  // PROCESS -> PARTICIPANT
+  // ====================================================
 
   const processIdToParticipantId =
-    new Map<string, string>();
+    new Map<
+      string,
+      string
+    >();
+
 
   for (
     const participantElement of
@@ -346,7 +659,9 @@ function buildProcessFromModeler(
         ?.processRef
         ?.id;
 
-    if (processRefId) {
+    if (
+      processRefId
+    ) {
       processIdToParticipantId.set(
         processRefId,
         participantId
@@ -354,42 +669,57 @@ function buildProcessFromModeler(
     }
   }
 
+
   // ====================================================
   // LANES
   // ====================================================
 
   const laneElements =
     bpmnElements.filter(
-      (element) =>
-        getBpmnType(element) ===
-        "bpmn:Lane"
+      (
+        element
+      ) =>
+        getBpmnType(
+          element
+        ) ===
+        "bpmn:Lane" &&
+        getElementId(
+          element
+        ) !==
+        UNASSIGNED_LANE_ID
     );
+
 
   const lanes:
     ProcessModel["lanes"] =
     laneElements.map(
-      (element) => {
+      (
+        element
+      ) => {
         const id =
-          getElementId(element);
-
-        const oldLane =
-          previousProcess.lanes.find(
-            (lane) =>
-              lane.id === id
+          getElementId(
+            element
           );
 
-        /**
-         * Für unseren Prototyp gibt es genau
-         * einen internen White-box-Pool.
-         *
-         * Eine neue Lane wird daher diesem
-         * Participant zugeordnet.
-         */
+        const oldLane =
+          previousProcess
+            .lanes
+            .find(
+              (
+                lane
+              ) =>
+                lane.id ===
+                id
+            );
+
         const participantId =
-          oldLane?.participantId ??
+          oldLane
+            ?.participantId ??
           defaultInternalParticipantId;
 
-        if (!participantId) {
+        if (
+          !participantId
+        ) {
           throw new Error(
             `Cannot determine participant for lane ${id}`
           );
@@ -401,42 +731,58 @@ function buildProcessFromModeler(
           participantId,
 
           name:
-            element.businessObject
-              ?.name?.trim() ||
-            oldLane?.name ||
+            element
+              .businessObject
+              ?.name
+              ?.trim() ||
+            oldLane
+              ?.name ||
             id,
 
           /**
-           * BPMN selbst unterscheidet hier nicht unsere
-           * Forschungs-Typen role/department/team.
-           * Bestehende Information wird erhalten.
+           * BPMN itself does not contain our
+           * role/department/team classification.
+           *
+           * Preserve known metadata where possible.
            */
           type:
-            oldLane?.type ??
+            oldLane
+              ?.type ??
             "department"
         };
       }
     );
 
+
   const lanesById =
     new Map(
       lanes.map(
-        (lane) => [
+        (
+          lane
+        ) => [
           lane.id,
           lane
         ]
       )
     );
 
+
   // ====================================================
   // FLOW NODE -> LANE
   // ====================================================
 
   const laneIdByElementId =
-    new Map<string, string>();
+    new Map<
+      string,
+      string
+    >();
 
+
+  // ----------------------------------------------------
   // Preferred:
-  // read BPMN lane.flowNodeRef
+  // BPMN lane.flowNodeRef
+  // ----------------------------------------------------
+
   for (
     const laneElement of
     laneElements
@@ -447,7 +793,8 @@ function buildProcessFromModeler(
       );
 
     const flowNodeRefs =
-      laneElement.businessObject
+      laneElement
+        .businessObject
         ?.flowNodeRef ??
       [];
 
@@ -455,7 +802,9 @@ function buildProcessFromModeler(
       const flowNode of
       flowNodeRefs
     ) {
-      if (flowNode.id) {
+      if (
+        flowNode.id
+      ) {
         laneIdByElementId.set(
           flowNode.id,
           laneId
@@ -464,16 +813,27 @@ function buildProcessFromModeler(
     }
   }
 
-  // Additional fallback:
-  // inspect graphical parent relation.
+
+  // ----------------------------------------------------
+  // Fallback:
+  // graphical parent relation
+  // ----------------------------------------------------
+
+  const explicitlyUnassignedIds =
+    new Set<string>();
+
   for (
     const element of
     bpmnElements
   ) {
     const processType =
-      getElementType(element);
+      getElementType(
+        element
+      );
 
-    if (!processType) {
+    if (
+      !processType
+    ) {
       continue;
     }
 
@@ -488,65 +848,107 @@ function buildProcessFromModeler(
       parentType ===
       "bpmn:Lane"
     ) {
-      laneIdByElementId.set(
-        getElementId(element),
+      const parentLaneId =
         getElementId(
           element.parent!
-        )
+        );
+
+      if (
+        parentLaneId ===
+        UNASSIGNED_LANE_ID
+      ) {
+        explicitlyUnassignedIds.add(
+          getElementId(
+            element
+          )
+        );
+
+        laneIdByElementId.delete(
+          getElementId(
+            element
+          )
+        );
+
+        continue;
+      }
+
+      laneIdByElementId.set(
+        getElementId(
+          element
+        ),
+
+        parentLaneId
       );
     }
   }
+
 
   // ====================================================
   // PROCESS ELEMENTS
   // ====================================================
 
   const elements:
-    ProcessElement[] = [];
+    ProcessElement[] =
+    [];
+
 
   for (
     const element of
     bpmnElements
   ) {
     const type =
-      getElementType(element);
+      getElementType(
+        element
+      );
 
-    if (!type) {
+    if (
+      !type
+    ) {
       continue;
     }
 
     const id =
-      getElementId(element);
-
-    const oldElement =
-      previousProcess.elements.find(
-        (candidate) =>
-          candidate.id === id
+      getElementId(
+        element
       );
 
+    const oldElement =
+      previousProcess
+        .elements
+        .find(
+          (
+            candidate
+          ) =>
+            candidate.id ===
+            id
+        );
+
     const name =
-      element.businessObject
-        ?.name?.trim() ||
-      oldElement?.name ||
+      element
+        .businessObject
+        ?.name
+        ?.trim() ||
+      oldElement
+        ?.name ||
       id;
 
-    // --------------------------------------------------
+
+    // ==================================================
     // LANE
-    // --------------------------------------------------
+    // ==================================================
 
     let laneId =
       laneIdByElementId.get(
         id
       );
 
-    /**
-     * Falls bpmn-js keine Lane-Beziehung liefert,
-     * behalten wir die alte nur dann, wenn diese
-     * Lane noch existiert.
-     */
     if (
       !laneId &&
-      oldElement?.laneId &&
+      !explicitlyUnassignedIds.has(
+        id
+      ) &&
+      oldElement
+        ?.laneId &&
       lanesById.has(
         oldElement.laneId
       )
@@ -555,32 +957,32 @@ function buildProcessFromModeler(
         oldElement.laneId;
     }
 
-    // --------------------------------------------------
+
+    // ==================================================
     // PARTICIPANT
-    // --------------------------------------------------
+    // ==================================================
 
     let participantId:
       | string
       | undefined;
 
-    if (laneId) {
+
+    if (
+      laneId
+    ) {
       participantId =
         lanesById.get(
           laneId
         )?.participantId;
     }
 
-    /**
-     * BPMN FlowNodes haben normalerweise den
-     * Process als $parent.
-     *
-     * Darüber kann der zugehörige Participant
-     * gefunden werden.
-     */
+
     const parentProcessId =
-      element.businessObject
+      element
+        .businessObject
         ?.$parent
         ?.id;
+
 
     if (
       !participantId &&
@@ -592,16 +994,21 @@ function buildProcessFromModeler(
         );
     }
 
+
     if (
       !participantId &&
-      oldElement?.participantId &&
+      oldElement
+        ?.participantId &&
       participantsById.has(
-        oldElement.participantId
+        oldElement
+          .participantId
       )
     ) {
       participantId =
-        oldElement.participantId;
+        oldElement
+          .participantId;
     }
+
 
     if (
       !participantId
@@ -610,15 +1017,18 @@ function buildProcessFromModeler(
         defaultInternalParticipantId;
     }
 
+
     // ==================================================
     // TASK
     // ==================================================
 
     if (
-      type === "task"
+      type ===
+      "task"
     ) {
       const oldTask =
-        oldElement?.type ===
+        oldElement
+          ?.type ===
         "task"
           ? oldElement
           : undefined;
@@ -630,40 +1040,57 @@ function buildProcessFromModeler(
 
       elements.push({
         id,
-        type: "task",
+
+        type:
+          "task",
+
         name,
 
-        ...(participantId
-          ? {
-              participantId
-            }
-          : {}),
-
-        ...(laneId
-          ? {
-              laneId
-            }
-          : {}),
-
-        ...(oldTask?.performer
-          ? {
-              performer:
-                oldTask.performer
-            }
-          : {}),
-
-        ...(oldTask?.system
-          ? {
-              system:
-                oldTask.system
-            }
-          : {}),
+        ...(
+          participantId
+            ? {
+                participantId
+              }
+            : {}
+        ),
 
         ...(
-          oldTask?.executionType
+          laneId
+            ? {
+                laneId
+              }
+            : {}
+        ),
+
+        ...(
+          oldTask
+            ?.performer
+            ? {
+                performer:
+                  oldTask
+                    .performer
+              }
+            : {}
+        ),
+
+        ...(
+          oldTask
+            ?.system
+            ? {
+                system:
+                  oldTask
+                    .system
+              }
+            : {}
+        ),
+
+        ...(
+          oldTask
+            ?.executionType
             ? {
                 executionType:
-                  oldTask.executionType
+                  oldTask
+                    .executionType
               }
             : inferredExecutionType
               ? {
@@ -685,6 +1112,12 @@ function buildProcessFromModeler(
             : {}
         ),
 
+        /**
+         * Legacy compatibility only.
+         *
+         * These fields are not used as the source of
+         * truth for Owner analysis markers.
+         */
         ...(
           oldTask
             ?.workaroundCandidate !==
@@ -709,54 +1142,78 @@ function buildProcessFromModeler(
             : {}
         ),
 
-        ...(oldTask?.workaroundReason
-          ? {
-              workaroundReason:
-                oldTask
-                  .workaroundReason
-            }
-          : {}),
+        ...(
+          oldTask
+            ?.workaroundReason !==
+          undefined
+            ? {
+                workaroundReason:
+                  oldTask
+                    .workaroundReason
+              }
+            : {}
+        ),
 
-        ...(oldTask
-          ?.workaroundCategory
-          ? {
-              workaroundCategory:
-                oldTask
-                  .workaroundCategory
-            }
-          : {})
+        ...(
+          oldTask
+            ?.workaroundCategory !==
+          undefined
+            ? {
+                workaroundCategory:
+                  oldTask
+                    .workaroundCategory
+              }
+            : {}
+        )
       });
 
       continue;
     }
+
 
     // ==================================================
     // START
     // ==================================================
 
     if (
-      type === "start"
+      type ===
+      "start"
     ) {
       elements.push({
         id,
-        type: "start",
+
+        type:
+          "start",
+
         name,
 
-        ...(participantId
+        ...(getEventDefinitionType(element)
           ? {
-              participantId
+              eventDefinitionType:
+                getEventDefinitionType(element)
             }
           : {}),
 
-        ...(laneId
-          ? {
-              laneId
-            }
-          : {})
+        ...(
+          participantId
+            ? {
+                participantId
+              }
+            : {}
+        ),
+
+        ...(
+          laneId
+            ? {
+                laneId
+              }
+            : {}
+        )
       });
 
       continue;
     }
+
 
     // ==================================================
     // EXCLUSIVE GATEWAY
@@ -774,89 +1231,214 @@ function buildProcessFromModeler(
 
         name,
 
-        ...(participantId
-          ? {
-              participantId
-            }
-          : {}),
+        ...(
+          participantId
+            ? {
+                participantId
+              }
+            : {}
+        ),
 
-        ...(laneId
-          ? {
-              laneId
-            }
-          : {})
+        ...(
+          laneId
+            ? {
+                laneId
+              }
+            : {}
+        )
       });
 
       continue;
     }
 
+
     // ==================================================
     // END
     // ==================================================
 
-    if (
-      type === "end"
-    ) {
+    if (type === "boundaryEvent") {
+      const attachedToRef =
+        element.businessObject
+          ?.attachedToRef
+          ?.id;
+
+      if (!attachedToRef) {
+        continue;
+      }
+
       elements.push({
         id,
-        type: "end",
+
+        type: "boundaryEvent",
+
         name,
 
-        ...(participantId
+        ...(getEventDefinitionType(element)
           ? {
-              participantId
+              eventDefinitionType:
+                getEventDefinitionType(element)
             }
           : {}),
 
-        ...(laneId
-          ? {
-              laneId
-            }
-          : {})
+        attachedToRef,
+
+        cancelActivity:
+          element.businessObject?.cancelActivity ?? true,
+
+        ...(
+          participantId
+            ? {
+                participantId
+              }
+            : {}
+        ),
+
+        ...(
+          laneId
+            ? {
+                laneId
+              }
+            : {}
+        )
       });
+
+        continue;
+      }
+
+      if (
+        type === "end" ||
+        type === "intermediateCatchEvent" ||
+        type === "intermediateThrowEvent"
+      ) {
+        elements.push({
+          id,
+
+          type,
+
+          name,
+
+          ...(getEventDefinitionType(element)
+            ? {
+                eventDefinitionType:
+                  getEventDefinitionType(element)
+              }
+            : {}),
+
+          ...(
+            participantId
+              ? {
+                  participantId
+                }
+              : {}
+          ),
+
+          ...(
+            laneId
+              ? {
+                  laneId
+                }
+              : {}
+          )
+        });
     }
   }
+
+  // ======================================================
+// DEFENSIVE DUPLICATE CHECK
+// ======================================================
+//
+// A valid ProcessModel must contain each semantic BPMN
+// element exactly once.
+//
+// Do not silently deduplicate here.
+//
+// A duplicate indicates a bug in BPMN -> ProcessModel
+// translation and should be detected before the model is
+// sent to the backend.
+// ======================================================
+
+const seenElementIds =
+  new Set<
+    string
+  >();
+
+
+for (
+  const element of
+  elements
+) {
+  if (
+    seenElementIds.has(
+      element.id
+    )
+  ) {
+    throw new Error(
+      `BPMN import produced duplicate process element ID: ${element.id}`
+    );
+  }
+
+  seenElementIds.add(
+    element.id
+  );
+}
 
   const elementsById =
     new Map(
       elements.map(
-        (element) => [
+        (
+          element
+        ) => [
           element.id,
           element
         ]
       )
     );
 
+
   // ====================================================
   // SEQUENCE FLOWS
   // ====================================================
 
   const flows:
-    SequenceFlow[] = [];
+    SequenceFlow[] =
+    [];
+
 
   for (
     const element of
     bpmnElements
   ) {
     if (
-      getBpmnType(element) !==
+      getBpmnType(
+        element
+      ) !==
       "bpmn:SequenceFlow"
     ) {
       continue;
     }
 
     const id =
-      getElementId(element);
+      getElementId(
+        element
+      );
 
     const from =
-      element.source?.id ??
-      element.businessObject
-        ?.sourceRef?.id;
+      element
+        .source
+        ?.id ??
+      element
+        .businessObject
+        ?.sourceRef
+        ?.id;
 
     const to =
-      element.target?.id ??
-      element.businessObject
-        ?.targetRef?.id;
+      element
+        .target
+        ?.id ??
+      element
+        .businessObject
+        ?.targetRef
+        ?.id;
 
     if (
       !from ||
@@ -866,33 +1448,71 @@ function buildProcessFromModeler(
     }
 
     const oldFlow =
-      previousProcess.flows.find(
-        (flow) =>
-          flow.id === id
-      );
+      previousProcess
+        .flows
+        .find(
+          (
+            flow
+          ) =>
+            flow.id ===
+            id
+        );
 
     const label =
-      element.businessObject
-        ?.name?.trim();
+      element
+        .businessObject
+        ?.name
+        ?.trim();
 
     flows.push({
       id,
+
       from,
+
       to,
 
-      ...(label
-        ? {
-            condition:
-              label
-          }
-        : oldFlow?.condition
+      ...(
+        label
           ? {
               condition:
-                oldFlow.condition
+                label
             }
-          : {})
+          : oldFlow
+              ?.condition
+            ? {
+                condition:
+                  oldFlow
+                    .condition
+              }
+            : {}
+      )
     });
   }
+
+  const seenFlowIds =
+  new Set<
+    string
+  >();
+
+
+for (
+  const flow of
+  flows
+) {
+  if (
+    seenFlowIds.has(
+      flow.id
+    )
+  ) {
+    throw new Error(
+      `BPMN import produced duplicate sequence flow ID: ${flow.id}`
+    );
+  }
+
+  seenFlowIds.add(
+    flow.id
+  );
+}
 
   // ====================================================
   // MESSAGE FLOWS
@@ -902,60 +1522,84 @@ function buildProcessFromModeler(
     ProcessModel["messageFlows"] =
     [];
 
-  const resolveParticipantForEndpoint = (
-    endpointId:
-      string | undefined
-  ): string | undefined => {
-    if (!endpointId) {
-      return undefined;
-    }
 
-    // Endpoint itself is a pool.
-    if (
-      participantsById.has(
-        endpointId
-      )
-    ) {
-      return endpointId;
-    }
+  const resolveParticipantForEndpoint =
+    (
+      endpointId:
+        string |
+        undefined
+    ):
+      string |
+      undefined => {
+      if (
+        !endpointId
+      ) {
+        return undefined;
+      }
 
-    // Endpoint is an activity/event/gateway.
-    return elementsById.get(
-      endpointId
-    )?.participantId;
-  };
+      if (
+        participantsById.has(
+          endpointId
+        )
+      ) {
+        return endpointId;
+      }
+
+      return elementsById
+        .get(
+          endpointId
+        )
+        ?.participantId;
+    };
+
 
   for (
     const element of
     bpmnElements
   ) {
     if (
-      getBpmnType(element) !==
+      getBpmnType(
+        element
+      ) !==
       "bpmn:MessageFlow"
     ) {
       continue;
     }
 
     const id =
-      getElementId(element);
+      getElementId(
+        element
+      );
 
     const oldFlow =
       previousProcess
         .messageFlows
         .find(
-          (flow) =>
-            flow.id === id
+          (
+            flow
+          ) =>
+            flow.id ===
+            id
         );
 
     const sourceEndpointId =
-      element.source?.id ??
-      element.businessObject
-        ?.sourceRef?.id;
+      element
+        .source
+        ?.id ??
+      element
+        .businessObject
+        ?.sourceRef
+        ?.id;
 
     const targetEndpointId =
-      element.target?.id ??
-      element.businessObject
-        ?.targetRef?.id;
+      element
+        .target
+        ?.id ??
+      element
+        .businessObject
+        ?.targetRef
+        ?.id;
+
 
     const fromParticipantId =
       resolveParticipantForEndpoint(
@@ -964,12 +1608,14 @@ function buildProcessFromModeler(
       oldFlow
         ?.fromParticipantId;
 
+
     const toParticipantId =
       resolveParticipantForEndpoint(
         targetEndpointId
       ) ??
       oldFlow
         ?.toParticipantId;
+
 
     if (
       !fromParticipantId ||
@@ -980,6 +1626,7 @@ function buildProcessFromModeler(
       );
     }
 
+
     const sourceElementId =
       sourceEndpointId &&
       elementsById.has(
@@ -987,6 +1634,7 @@ function buildProcessFromModeler(
       )
         ? sourceEndpointId
         : undefined;
+
 
     const targetElementId =
       targetEndpointId &&
@@ -996,10 +1644,15 @@ function buildProcessFromModeler(
         ? targetEndpointId
         : undefined;
 
-    const name =
-      element.businessObject
-        ?.name?.trim() ||
-      oldFlow?.name;
+
+    const flowName =
+      element
+        .businessObject
+        ?.name
+        ?.trim() ||
+      oldFlow
+        ?.name;
+
 
     messageFlows.push({
       id,
@@ -1008,28 +1661,41 @@ function buildProcessFromModeler(
 
       toParticipantId,
 
-      ...(sourceElementId
-        ? {
-            sourceElementId
-          }
-        : {}),
+      ...(
+        sourceElementId
+          ? {
+              sourceElementId
+            }
+          : {}
+      ),
 
-      ...(targetElementId
-        ? {
-            targetElementId
-          }
-        : {}),
+      ...(
+        targetElementId
+          ? {
+              targetElementId
+            }
+          : {}
+      ),
 
-      ...(name
-        ? {
-            name
-          }
-        : {})
+      ...(
+        flowName
+          ? {
+              name:
+                flowName
+            }
+          : {}
+      )
     });
   }
 
+
   // ====================================================
-  // PRESERVE WORKAROUND METADATA
+  // LEGACY WORKAROUND METADATA
+  // ====================================================
+  //
+  // This is preserved only for backwards compatibility.
+  //
+  // It is NOT used to render Owner markers.
   // ====================================================
 
   const existingTaskIds =
@@ -1040,35 +1706,46 @@ function buildProcessFromModeler(
             element
           ): element is Extract<
             ProcessElement,
-            { type: "task" }
+            {
+              type:
+                "task";
+            }
           > =>
             element.type ===
             "task"
         )
         .map(
-          (element) =>
+          (
+            element
+          ) =>
             element.id
         )
     );
+
 
   const workarounds =
     previousProcess
       .workarounds
       .map(
-        (workaround) => ({
+        (
+          workaround
+        ) => ({
           ...workaround,
 
           relatedActivityIds:
             workaround
               .relatedActivityIds
               .filter(
-                (id) =>
+                (
+                  id
+                ) =>
                   existingTaskIds.has(
                     id
                   )
               )
         })
       );
+
 
   // ====================================================
   // FINAL PROCESS
@@ -1090,45 +1767,58 @@ function buildProcessFromModeler(
     workarounds,
 
     updatedAt:
-      new Date().toISOString()
+      new Date()
+        .toISOString()
   };
 }
+
 
 // ======================================================
 // SEMANTIC SIGNATURE
 // ======================================================
 //
-// Position / x / y are intentionally NOT included.
+// Coordinates are deliberately excluded.
 //
-// Thus:
-// moving a shape inside the same lane
-// -> no backend update
-//
-// Moving a task into another lane
-// -> laneId changes
-// -> backend update
+// Moving a shape without changing its semantic lane or
+// process context does not create a new process version.
 // ======================================================
 
 function semanticSignature(
-  process: ProcessModel
+  process:
+    ProcessModel
 ): string {
   const sortById =
-    <T extends { id: string }>(
-      values: T[]
+    <
+      T extends {
+        id:
+          string;
+      }
+    >(
+      values:
+        T[]
     ): T[] =>
-      [...values].sort(
-        (a, b) =>
-          a.id.localeCompare(
-            b.id
-          )
+      [
+        ...values
+      ].sort(
+        (
+          left,
+          right
+        ) =>
+          left.id
+            .localeCompare(
+              right.id
+            )
       );
+
 
   return JSON.stringify({
     participants:
       sortById(
         process.participants
       ).map(
-        (participant) => ({
+        (
+          participant
+        ) => ({
           id:
             participant.id,
 
@@ -1148,7 +1838,9 @@ function semanticSignature(
       sortById(
         process.lanes
       ).map(
-        (lane) => ({
+        (
+          lane
+        ) => ({
           id:
             lane.id,
 
@@ -1167,7 +1859,9 @@ function semanticSignature(
       sortById(
         process.elements
       ).map(
-        (element) => ({
+        (
+          element
+        ) => ({
           id:
             element.id,
 
@@ -1178,26 +1872,28 @@ function semanticSignature(
             element.name,
 
           participantId:
-            element.participantId,
+            element
+              .participantId,
 
           laneId:
-            element.laneId,
+            element
+              .laneId,
 
           performer:
             element.type ===
-            "task"
+              "task"
               ? element.performer
               : undefined,
 
           system:
             element.type ===
-            "task"
+              "task"
               ? element.system
               : undefined,
 
           executionType:
             element.type ===
-            "task"
+              "task"
               ? element
                   .executionType
               : undefined
@@ -1208,7 +1904,9 @@ function semanticSignature(
       sortById(
         process.flows
       ).map(
-        (flow) => ({
+        (
+          flow
+        ) => ({
           id:
             flow.id,
 
@@ -1227,7 +1925,9 @@ function semanticSignature(
       sortById(
         process.messageFlows
       ).map(
-        (flow) => ({
+        (
+          flow
+        ) => ({
           id:
             flow.id,
 
@@ -1240,10 +1940,12 @@ function semanticSignature(
               .toParticipantId,
 
           sourceElementId:
-            flow.sourceElementId,
+            flow
+              .sourceElementId,
 
           targetElementId:
-            flow.targetElementId,
+            flow
+              .targetElementId,
 
           name:
             flow.name
@@ -1252,41 +1954,68 @@ function semanticSignature(
   });
 }
 
+
 // ======================================================
-// WORKAROUND MARKERS
+// OWNER ANALYSIS HIGHLIGHTS
+// ======================================================
+//
+// The marker source is exclusively:
+//
+// OwnerView
+// -> SessionAnalysis.deviations
+// -> SessionAnalysis.ownerReviews
+// -> BpmnHighlight[]
+//
+// process.workarounds is NOT consulted here.
 // ======================================================
 
-function renderWorkaroundMarkers(
-  modeler: BpmnModelerLib,
-  process: ProcessModel
+function renderHighlights(
+  modeler:
+    BpmnModelerLib,
+
+  highlights:
+    BpmnHighlight[],
+
+  mode:
+    BpmnEditorMode
 ): void {
   const canvas =
     modeler.get(
       "canvas"
     ) as BpmnCanvas;
 
+
   const overlays =
     modeler.get(
       "overlays"
     ) as BpmnOverlays;
+
 
   const registry =
     modeler.get(
       "elementRegistry"
     ) as ElementRegistry;
 
+
+  // ====================================================
+  // CLEAR PREVIOUS OVERLAYS
+  // ====================================================
+
   overlays.clear();
 
-  // ----------------------------------------------------
+
+  // ====================================================
   // REMOVE PREVIOUS MARKERS
-  // ----------------------------------------------------
+  // ====================================================
 
   for (
     const element of
     registry.getAll()
   ) {
     if (
-      getElementType(element) !==
+      getElementType(
+        element
+      ) !==
       "task"
     ) {
       continue;
@@ -1294,91 +2023,97 @@ function renderWorkaroundMarkers(
 
     canvas.removeMarker(
       element.id,
-      "task-workaround-candidate"
+      "deviation-candidate"
     );
 
     canvas.removeMarker(
       element.id,
-      "task-workaround-confirmed"
+      "deviation-confirmed"
     );
   }
 
-  // ----------------------------------------------------
-  // ADD CURRENT MARKERS
-  // ----------------------------------------------------
+
+  // ====================================================
+  // EMPLOYEE
+  // ====================================================
+
+  if (
+    mode !==
+    "owner"
+  ) {
+    return;
+  }
+
+
+  // ====================================================
+  // OWNER
+  // ====================================================
 
   for (
-    const workaround of
-    process.workarounds
+    const highlight of
+    highlights
   ) {
     if (
-      workaround.status ===
-      "rejected"
+      !registry.get(
+        highlight.activityId
+      )
     ) {
       continue;
     }
 
-    for (
-      const activityId of
-      workaround.relatedActivityIds
+
+    if (
+      highlight.status ===
+      "confirmed"
     ) {
-      /**
-       * Prevent overlays for activities that no longer
-       * exist in the currently displayed BPMN.
-       */
-      if (
-        !registry.get(
-          activityId
-        )
-      ) {
-        continue;
-      }
-
-      if (
-        workaround.status ===
-        "confirmed"
-      ) {
-        canvas.addMarker(
-          activityId,
-          "task-workaround-confirmed"
-        );
-
-        overlays.add(
-          activityId,
-          {
-            position: {
-              top: -8,
-              right: -8
-            },
-
-            html:
-              '<div class="workaround-overlay confirmed">✓</div>'
-          }
-        );
-
-        continue;
-      }
-
       canvas.addMarker(
-        activityId,
-        "task-workaround-candidate"
+        highlight.activityId,
+        "deviation-confirmed"
       );
 
       overlays.add(
-        activityId,
+        highlight.activityId,
         {
           position: {
-            top: -8,
-            right: -8
+            top:
+              -8,
+
+            right:
+              -8
           },
 
           html:
-            '<div class="workaround-overlay candidate">⚠</div>'
+            '<div class="deviation-overlay confirmed">✓</div>'
         }
       );
+
+      continue;
     }
+
+
+    canvas.addMarker(
+      highlight.activityId,
+      "deviation-candidate"
+    );
+
+    overlays.add(
+      highlight.activityId,
+      {
+        position: {
+          top:
+            -8,
+
+          right:
+            -8
+        },
+
+        html:
+          '<div class="deviation-overlay candidate">!</div>'
+      }
+    );
   }
 }
+
 
 // ======================================================
 // COMPONENT
@@ -1387,81 +2122,146 @@ function renderWorkaroundMarkers(
 export function BpmnEditor({
   xml,
   process,
+  highlights = [],
+  mode,
+  xmlImportMode = "display",
+  onImportError,
   onProcessChange
 }: Props): JSX.Element {
   const containerRef =
-    useRef<HTMLDivElement | null>(
+    useRef<
+      HTMLDivElement |
+      null
+    >(
       null
     );
+
 
   const modelerRef =
-    useRef<BpmnModelerLib | null>(
+    useRef<
+      BpmnModelerLib |
+      null
+    >(
       null
     );
 
+
   // ====================================================
-  // CURRENT REACT VALUES FOR STABLE EVENT CALLBACKS
+  // CURRENT REACT VALUES FOR STABLE CALLBACKS
   // ====================================================
 
   const processRef =
-    useRef<ProcessModel>(
+    useRef<
+      ProcessModel
+    >(
       process
     );
+
+
+  const modeRef =
+    useRef<
+      BpmnEditorMode
+    >(
+      mode
+    );
+
+
+  const highlightsRef =
+    useRef<
+      BpmnHighlight[]
+    >(
+      highlights
+    );
+
 
   const onProcessChangeRef =
     useRef(
       onProcessChange
     );
 
+
+  const onImportErrorRef =
+    useRef(
+      onImportError
+    );
+
+
   // ====================================================
   // IMPORT STATE
   // ====================================================
 
   /**
-   * commandStack.changed may also fire while XML
-   * is being imported.
+   * True only while bpmn-js itself is currently
+   * importing XML.
    *
-   * During an import, these events must not be sent
-   * back to the backend as manual changes.
+   * commandStack events caused by importXML() must never
+   * be interpreted as manual user changes.
    */
   const importingRef =
-    useRef(false);
+    useRef(
+      false
+    );
+
 
   /**
-   * Indicates whether at least one diagram has already
-   * been imported successfully.
+   * Has at least one diagram been imported successfully?
    */
   const hasImportedDiagramRef =
-    useRef(false);
+    useRef(
+      false
+    );
+
 
   /**
-   * Semantic state that is CURRENTLY represented in the
-   * bpmn-js modeler.
-   *
-   * Important:
-   * this is deliberately separate from processRef.
+   * Semantic state currently represented by bpmn-js.
    */
   const renderedSignatureRef =
-    useRef("");
+    useRef(
+      ""
+    );
+
 
   /**
-   * Last XML that was successfully imported.
-   *
-   * If a newly generated XML is invalid, we attempt
-   * to restore the last working diagram.
+   * Last successfully imported XML.
    */
   const lastValidXmlRef =
-    useRef("");
+    useRef(
+      ""
+    );
+
 
   const lastValidSignatureRef =
-    useRef("");
+    useRef(
+      ""
+    );
+
 
   /**
-   * Prevent older asynchronous import operations from
-   * overwriting the state of a newer import.
+   * Invalidate outdated import effects.
    */
   const importVersionRef =
-    useRef(0);
+    useRef(
+      0
+    );
+
+
+  /**
+   * importXML() must not be executed concurrently on the
+   * same bpmn-js modeler.
+   *
+   * Rapid reference changes / React lifecycle updates can
+   * otherwise corrupt the internal canvas state and cause
+   * errors such as:
+   *
+   * this._layers is undefined
+   */
+  const importQueueRef =
+    useRef<
+      Promise<void>
+    >(
+      Promise.resolve()
+    );
+
 
   // ====================================================
   // CHANGE DEBOUNCE
@@ -1471,441 +2271,787 @@ export function BpmnEditor({
     useRef<
       ReturnType<
         typeof setTimeout
-      > | undefined
-    >(undefined);
+      > |
+      undefined
+    >(
+      undefined
+    );
+
 
   // ====================================================
   // KEEP PROCESS REF CURRENT
   // ====================================================
 
-  useEffect(() => {
-    processRef.current =
-      process;
+  useEffect(
+    () => {
+      processRef.current =
+        process;
+    },
+    [
+      process
+    ]
+  );
 
-    /**
-     * Workaround status may change without changing
-     * the generated BPMN XML.
-     *
-     * In that case we update only the markers and do
-     * NOT import the diagram again.
-     */
-    const modeler =
-      modelerRef.current;
 
-    if (
-      modeler &&
-      !importingRef.current &&
-      hasImportedDiagramRef.current
-    ) {
-      try {
-        renderWorkaroundMarkers(
-          modeler,
-          process
-        );
-      } catch (error) {
-        console.error(
-          "[BpmnEditor] Failed to refresh workaround markers",
-          error
-        );
-      }
-    }
-  }, [process]);
+  // ====================================================
+  // KEEP MODE REF CURRENT
+  // ====================================================
+
+  useEffect(
+    () => {
+      modeRef.current =
+        mode;
+    },
+    [
+      mode
+    ]
+  );
+
 
   // ====================================================
   // KEEP CALLBACK REF CURRENT
   // ====================================================
 
-  useEffect(() => {
-    onProcessChangeRef.current =
-      onProcessChange;
-  }, [onProcessChange]);
+  useEffect(
+    () => {
+      onProcessChangeRef.current =
+        onProcessChange;
+    },
+    [
+      onProcessChange
+    ]
+  );
+
+
+  // ====================================================
+  // KEEP IMPORT ERROR CALLBACK CURRENT
+  // ====================================================
+
+  useEffect(
+    () => {
+      onImportErrorRef.current =
+        onImportError;
+    },
+    [
+      onImportError
+    ]
+  );
+
+
+  // ====================================================
+  // KEEP HIGHLIGHTS CURRENT
+  // ====================================================
+
+  useEffect(
+    () => {
+      highlightsRef.current =
+        highlights;
+
+      const modeler =
+        modelerRef.current;
+
+      if (
+        !modeler ||
+        !hasImportedDiagramRef.current ||
+        importingRef.current
+      ) {
+        return;
+      }
+
+      try {
+        renderHighlights(
+          modeler,
+          highlights,
+          mode
+        );
+      } catch (
+        error
+      ) {
+        console.error(
+          "[BpmnEditor] Failed to refresh highlights",
+          error
+        );
+      }
+    },
+    [
+      highlights,
+      mode
+    ]
+  );
+
 
   // ====================================================
   // CREATE BPMN MODELER ONCE
   // ====================================================
-  //
-  // IMPORTANT:
-  // Empty dependency array.
-  //
-  // The Modeler must not be destroyed/recreated whenever
-  // App.tsx creates a new onProcessChange function.
-  // ====================================================
 
-  useEffect(() => {
-    if (
-      !containerRef.current
-    ) {
-      return;
-    }
+  useEffect(
+    () => {
+      if (
+        !containerRef.current
+      ) {
+        return;
+      }
 
-    const modeler =
-      new BpmnModelerLib({
-        container:
-          containerRef.current
-      });
 
-    modelerRef.current =
-      modeler;
+      const modeler =
+        new BpmnModelerLib({
+          container:
+            containerRef.current
+        });
 
-    const eventBus =
-      modeler.get(
-        "eventBus"
-      ) as EventBus;
 
-    // --------------------------------------------------
-    // USER CHANGED BPMN
-    // --------------------------------------------------
+      modelerRef.current =
+        modeler;
 
-    const handleCommandStackChanged:
-      EventBusCallback =
-      () => {
-        /**
-         * Ignore changes caused by importXML().
-         */
-        if (
-          importingRef.current
-        ) {
-          return;
-        }
 
+      const eventBus =
+        modeler.get(
+          "eventBus"
+        ) as EventBus;
+
+
+      // ==================================================
+      // USER CHANGED BPMN
+      // ==================================================
+
+      const handleCommandStackChanged:
+        EventBusCallback =
+        () => {
+          /**
+           * Ignore bpmn-js commands produced by an XML
+           * import.
+           */
+          if (
+            importingRef.current
+          ) {
+            return;
+          }
+
+
+          if (
+            changeTimerRef.current
+          ) {
+            clearTimeout(
+              changeTimerRef.current
+            );
+          }
+
+
+          /**
+           * One visual interaction may create several
+           * command-stack events.
+           */
+          changeTimerRef.current =
+            setTimeout(
+              () => {
+                changeTimerRef.current =
+                  undefined;
+
+
+                if (
+                  importingRef.current
+                ) {
+                  return;
+                }
+
+
+                const currentModeler =
+                  modelerRef.current;
+
+
+                if (
+                  !currentModeler ||
+                  currentModeler !==
+                    modeler
+                ) {
+                  return;
+                }
+
+
+                try {
+                  const nextProcess =
+                    buildProcessFromModeler(
+                      currentModeler,
+                      processRef.current
+                    );
+
+
+                  const nextSignature =
+                    semanticSignature(
+                      nextProcess
+                    );
+
+
+                  /**
+                   * Pure graphical movement without a
+                   * semantic process change is ignored.
+                   */
+                  if (
+                    nextSignature ===
+                    renderedSignatureRef
+                      .current
+                  ) {
+                    return;
+                  }
+
+
+                  renderedSignatureRef.current =
+                    nextSignature;
+
+
+                  processRef.current =
+                    nextProcess;
+
+
+                  onProcessChangeRef.current(
+                    nextProcess
+                  );
+                } catch (
+                  error
+                ) {
+                  console.error(
+                    "[BpmnEditor] Failed to translate manual BPMN edit into ProcessModel",
+                    error
+                  );
+                }
+              },
+              250
+            );
+        };
+
+
+      eventBus.on(
+        "commandStack.changed",
+        handleCommandStackChanged
+      );
+
+
+      // ==================================================
+      // CLEANUP
+      // ==================================================
+
+      return () => {
         if (
           changeTimerRef.current
         ) {
           clearTimeout(
             changeTimerRef.current
           );
+
+          changeTimerRef.current =
+            undefined;
         }
 
-        /**
-         * One visual action may generate multiple
-         * internal bpmn-js commands.
-         */
-        changeTimerRef.current =
-          setTimeout(
-            () => {
-              changeTimerRef.current =
-                undefined;
 
-              if (
-                importingRef.current
-              ) {
-                return;
-              }
-
-              const currentModeler =
-                modelerRef.current;
-
-              if (
-                !currentModeler
-              ) {
-                return;
-              }
-
-              try {
-                const nextProcess =
-                  buildProcessFromModeler(
-                    currentModeler,
-                    processRef.current
-                  );
-
-                const nextSignature =
-                  semanticSignature(
-                    nextProcess
-                  );
-
-                /**
-                 * Pure layout edits such as moving a
-                 * task horizontally do not change the
-                 * semantic signature.
-                 */
-                if (
-                  nextSignature ===
-                  renderedSignatureRef.current
-                ) {
-                  return;
-                }
-
-                /**
-                 * The editor already represents this
-                 * semantic state.
-                 */
-                renderedSignatureRef.current =
-                  nextSignature;
-
-                processRef.current =
-                  nextProcess;
-
-                onProcessChangeRef.current(
-                  nextProcess
-                );
-              } catch (error) {
-                console.error(
-                  "[BpmnEditor] Failed to translate manual BPMN edit into ProcessModel",
-                  error
-                );
-              }
-            },
-            250
-          );
-      };
-
-    eventBus.on(
-      "commandStack.changed",
-      handleCommandStackChanged
-    );
-
-    // --------------------------------------------------
-    // CLEANUP ONLY WHEN COMPONENT UNMOUNTS
-    // --------------------------------------------------
-
-    return () => {
-      if (
-        changeTimerRef.current
-      ) {
-        clearTimeout(
-          changeTimerRef.current
+        eventBus.off(
+          "commandStack.changed",
+          handleCommandStackChanged
         );
 
-        changeTimerRef.current =
-          undefined;
+
+        // ----------------------------------------------
+        // Invalidate outstanding async imports BEFORE
+        // destroying bpmn-js.
+        // ----------------------------------------------
+
+        importVersionRef.current +=
+          1;
+
+
+        if (
+          modelerRef.current ===
+          modeler
+        ) {
+          modelerRef.current =
+            null;
+
+          importingRef.current =
+            false;
+        }
+
+
+        modeler.destroy();
+      };
+    },
+    []
+  );
+
+
+  // ====================================================
+  // IMPORT BPMN XML
+  // ====================================================
+
+  useEffect(
+    () => {
+      const modeler =
+        modelerRef.current;
+
+
+      if (
+        !modeler ||
+        !xml
+      ) {
+        return;
       }
 
-      eventBus.off(
-        "commandStack.changed",
-        handleCommandStackChanged
-      );
 
-      modeler.destroy();
+      // ==================================================
+      // EXPLICIT OWNER UPLOAD?
+      // ==================================================
 
-      modelerRef.current =
-        null;
-    };
-  }, []);
+      const importingOwnerDraft =
+        xmlImportMode ===
+        "draft";
 
-  // ====================================================
-  // IMPORT XML FROM BACKEND
-  // ====================================================
-  //
-  // IMPORTANT:
-  //
-  // This effect depends ONLY on xml.
-  //
-  // A ProcessModel state update alone must not cause a
-  // complete BPMN re-import.
-  // ====================================================
 
-  useEffect(() => {
-    const modeler =
-      modelerRef.current;
+      // ==================================================
+      // CURRENT SEMANTIC STATE
+      // ==================================================
 
-    if (
-      !modeler ||
-      !xml
-    ) {
-      return;
-    }
-
-    const incomingSignature =
-      semanticSignature(
-        processRef.current
-      );
-
-    /**
-     * Important for MANUAL edits:
-     *
-     * 1. User moves task to another lane
-     * 2. Modeler already displays that change
-     * 3. Backend saves ProcessModel
-     * 4. Backend returns regenerated XML
-     *
-     * If the semantic state is already displayed,
-     * DO NOT re-import the whole BPMN.
-     *
-     * Otherwise selection, undo stack and visual state
-     * are unnecessarily reset.
-     */
-    if (
-      hasImportedDiagramRef.current &&
-      incomingSignature ===
-        renderedSignatureRef.current
-    ) {
-      try {
-        renderWorkaroundMarkers(
-          modeler,
+      const incomingSignature =
+        semanticSignature(
           processRef.current
         );
-      } catch (error) {
-        console.error(
-          "[BpmnEditor] Failed to refresh markers",
-          error
-        );
+
+
+      // ==================================================
+      // SKIP REDUNDANT DISPLAY IMPORT
+      // ==================================================
+      //
+      // Backend-generated XML may be skipped if exactly
+      // the same semantic model is already displayed.
+      //
+      // An explicit owner upload must NEVER be skipped,
+      // because its ProcessModel does not exist until the
+      // uploaded XML has actually been imported.
+      // ==================================================
+
+      if (
+        !importingOwnerDraft &&
+        hasImportedDiagramRef.current &&
+        incomingSignature ===
+          renderedSignatureRef.current
+      ) {
+        if (
+          !importingRef.current
+        ) {
+          try {
+            renderHighlights(
+              modeler,
+              highlightsRef.current,
+              modeRef.current
+            );
+          } catch (
+            error
+          ) {
+            console.error(
+              "[BpmnEditor] Failed to refresh highlights",
+              error
+            );
+          }
+        }
+
+        return;
       }
 
-      return;
-    }
 
-    const importVersion =
-      ++importVersionRef.current;
+      // ==================================================
+      // IMPORT VERSION
+      // ==================================================
 
-    let disposed =
-      false;
+      const importVersion =
+        ++importVersionRef.current;
 
-    const importDiagram =
-      async (): Promise<void> => {
-        importingRef.current =
-          true;
 
-        try {
-          const result =
-            await modeler.importXML(
-              xml
-            );
+      let disposed =
+        false;
 
+
+      const isCurrentImport =
+        (): boolean =>
+          !disposed &&
+          importVersion ===
+            importVersionRef.current &&
+          modelerRef.current ===
+            modeler;
+
+
+      // ==================================================
+      // SERIALIZED IMPORT
+      // ==================================================
+
+      const runImport =
+        async (): Promise<void> => {
           /**
-           * Ignore an old import result if a newer
-           * import has started meanwhile.
+           * This import may have become obsolete while
+           * waiting for an older import to finish.
            */
           if (
-            disposed ||
-            importVersion !==
-              importVersionRef.current
+            !isCurrentImport()
           ) {
             return;
           }
 
-          if (
-            result.warnings &&
-            result.warnings.length >
-              0
-          ) {
-            console.warn(
-              "[BpmnEditor] BPMN import warnings:",
-              result.warnings
-            );
-          }
 
-          const canvas =
-            modeler.get(
-              "canvas"
-            ) as BpmnCanvas;
-
-          canvas.zoom(
-            "fit-viewport"
-          );
-
-          renderWorkaroundMarkers(
-            modeler,
-            processRef.current
-          );
-
-          // --------------------------------------------
-          // Remember successful state
-          // --------------------------------------------
-
-          hasImportedDiagramRef.current =
+          importingRef.current =
             true;
 
-          renderedSignatureRef.current =
-            semanticSignature(
-              processRef.current
+
+          try {
+            console.info(
+              "[BpmnEditor] Importing BPMN XML",
+              {
+                mode:
+                  xmlImportMode,
+
+                xmlLength:
+                  xml.length
+              }
             );
 
-          lastValidXmlRef.current =
-            xml;
 
-          lastValidSignatureRef.current =
-            renderedSignatureRef.current;
-        } catch (error) {
-          console.error(
-            "[BpmnEditor] BPMN import failed:",
-            error
-          );
-
-          // ==================================================
-          // RESTORE LAST WORKING DIAGRAM
-          // ==================================================
-          //
-          // importXML may already have cleared parts of the
-          // canvas before reporting an error.
-          //
-          // Therefore restore the previous valid XML.
-          // ==================================================
-
-          const previousXml =
-            lastValidXmlRef.current;
-
-          if (
-            !disposed &&
-            previousXml &&
-            previousXml !== xml
-          ) {
-            try {
-              console.warn(
-                "[BpmnEditor] Restoring last valid BPMN diagram"
-              );
-
+            const result =
               await modeler.importXML(
-                previousXml
+                xml
               );
 
-              if (
-                disposed ||
-                importVersion !==
-                  importVersionRef.current
-              ) {
-                return;
-              }
 
-              const canvas =
-                modeler.get(
-                  "canvas"
-                ) as BpmnCanvas;
-
-              canvas.zoom(
-                "fit-viewport"
-              );
-
-              renderedSignatureRef.current =
-                lastValidSignatureRef.current;
-
-              hasImportedDiagramRef.current =
-                true;
-
-              renderWorkaroundMarkers(
-                modeler,
-                processRef.current
-              );
-            } catch (
-              restoreError
+            /**
+             * The import may have finished after a newer
+             * XML request or modeler replacement.
+             */
+            if (
+              !isCurrentImport()
             ) {
-              console.error(
-                "[BpmnEditor] Failed to restore previous BPMN diagram:",
-                restoreError
+              return;
+            }
+
+
+            // ------------------------------------------
+            // WARNINGS
+            // ------------------------------------------
+
+            if (
+              result.warnings &&
+              result.warnings.length >
+                0
+            ) {
+              console.warn(
+                "[BpmnEditor] BPMN import warnings:",
+                result.warnings
               );
             }
-          }
-        } finally {
-          /**
-           * Only the newest import may clear the
-           * importing state.
-           */
-          if (
-            importVersion ===
-            importVersionRef.current
+
+
+            // ------------------------------------------
+            // FIT DIAGRAM
+            // ------------------------------------------
+
+            const canvas =
+              modeler.get(
+                "canvas"
+              ) as BpmnCanvas;
+
+
+            canvas.zoom(
+              "fit-viewport"
+            );
+
+
+            // ==================================================
+            // OWNER UPLOAD -> SEMANTIC PROCESS DRAFT
+            // ==================================================
+
+            if (
+              importingOwnerDraft
+            ) {
+              const importedProcess =
+                buildProcessFromModeler(
+                  modeler,
+                  processRef.current
+                );
+
+
+              processRef.current =
+                importedProcess;
+
+
+              renderedSignatureRef.current =
+                semanticSignature(
+                  importedProcess
+                );
+
+
+              console.info(
+                "[BpmnEditor] Uploaded BPMN converted to ProcessModel",
+                {
+                  participants:
+                    importedProcess
+                      .participants
+                      .length,
+
+                  lanes:
+                    importedProcess
+                      .lanes
+                      .length,
+
+                  elements:
+                    importedProcess
+                      .elements
+                      .length,
+
+                  flows:
+                    importedProcess
+                      .flows
+                      .length,
+
+                  messageFlows:
+                    importedProcess
+                      .messageFlows
+                      .length
+                }
+              );
+
+
+              /**
+               * This turns the imported BPMN into the
+               * local unsaved ReferenceProcess draft.
+               */
+              onProcessChangeRef.current(
+                importedProcess
+              );
+            }
+
+
+            // ==================================================
+            // ROLE-SPECIFIC VISUALIZATION
+            // ==================================================
+
+            renderHighlights(
+              modeler,
+              highlightsRef.current,
+              modeRef.current
+            );
+
+
+            // ==================================================
+            // REMEMBER SUCCESSFUL STATE
+            // ==================================================
+
+            hasImportedDiagramRef.current =
+              true;
+
+
+            renderedSignatureRef.current =
+              semanticSignature(
+                processRef.current
+              );
+
+
+            lastValidXmlRef.current =
+              xml;
+
+
+            lastValidSignatureRef.current =
+              renderedSignatureRef.current;
+          } catch (
+            error
           ) {
-            importingRef.current =
-              false;
+            // ==================================================
+            // IGNORE OUTDATED IMPORT ERRORS
+            // ==================================================
+            //
+            // An old React lifecycle/import operation may fail
+            // after a newer model has already replaced it.
+            //
+            // That must not be reported as a corrupt BPMN file.
+            // ==================================================
+
+            if (
+              !isCurrentImport()
+            ) {
+              return;
+            }
+
+
+            const normalizedError =
+              error instanceof
+                Error
+                ? error
+                : new Error(
+                    String(
+                      error
+                    )
+                  );
+
+
+            console.error(
+              "[BpmnEditor] BPMN import failed:",
+              normalizedError
+            );
+
+
+            onImportErrorRef
+              .current
+              ?.(
+                normalizedError
+              );
+
+
+            // ==================================================
+            // RESTORE LAST VALID DIAGRAM
+            // ==================================================
+
+            const previousXml =
+              lastValidXmlRef.current;
+
+
+            if (
+              previousXml &&
+              previousXml !==
+                xml
+            ) {
+              try {
+                console.warn(
+                  "[BpmnEditor] Restoring last valid BPMN diagram"
+                );
+
+
+                await modeler.importXML(
+                  previousXml
+                );
+
+
+                if (
+                  !isCurrentImport()
+                ) {
+                  return;
+                }
+
+
+                const canvas =
+                  modeler.get(
+                    "canvas"
+                  ) as BpmnCanvas;
+
+
+                canvas.zoom(
+                  "fit-viewport"
+                );
+
+
+                renderedSignatureRef.current =
+                  lastValidSignatureRef.current;
+
+
+                hasImportedDiagramRef.current =
+                  true;
+
+
+                renderHighlights(
+                  modeler,
+                  highlightsRef.current,
+                  modeRef.current
+                );
+              } catch (
+                restoreError
+              ) {
+                if (
+                  !isCurrentImport()
+                ) {
+                  return;
+                }
+
+
+                console.error(
+                  "[BpmnEditor] Failed to restore previous BPMN diagram:",
+                  restoreError
+                );
+              }
+            }
+          } finally {
+            /**
+             * Imports are serialized, therefore this import
+             * may safely clear the import flag after it
+             * actually finishes.
+             *
+             * Do not let a destroyed old modeler interfere
+             * with a replacement modeler.
+             */
+            if (
+              modelerRef.current ===
+              modeler
+            ) {
+              importingRef.current =
+                false;
+            }
           }
+        };
+
+
+      // ==================================================
+      // IMPORT QUEUE
+      // ==================================================
+      //
+      // Critical:
+      //
+      // Never run two modeler.importXML() operations
+      // concurrently.
+      //
+      // This protects diagram-js' internal Canvas layers.
+      // ==================================================
+
+      importQueueRef.current =
+        importQueueRef.current
+          .catch(
+            (
+              queueError
+            ) => {
+              console.error(
+                "[BpmnEditor] Previous queued import failed:",
+                queueError
+              );
+            }
+          )
+          .then(
+            async () => {
+              await runImport();
+            }
+          );
+
+
+      // ==================================================
+      // EFFECT CLEANUP
+      // ==================================================
+
+      return () => {
+        disposed =
+          true;
+
+
+        /**
+         * Invalidate this import request.
+         *
+         * If it is already running, it may finish inside
+         * bpmn-js, but its result is ignored.
+         *
+         * The next XML import waits in the queue.
+         */
+        if (
+          importVersion ===
+          importVersionRef.current
+        ) {
+          importVersionRef.current +=
+            1;
         }
       };
+    },
+    [
+      xml,
+      xmlImportMode
+    ]
+  );
 
-    void importDiagram();
-
-    return () => {
-      disposed =
-        true;
-    };
-  }, [xml]);
 
   // ====================================================
   // RENDER
@@ -1913,8 +3059,17 @@ export function BpmnEditor({
 
   return (
     <div
-      ref={containerRef}
-      className="bpmn-canvas"
-    />
+      className={
+        `bpmn-editor bpmn-editor-${mode}`
+      }
+    >
+      <div
+        ref={
+          containerRef
+        }
+
+        className="bpmn-canvas"
+      />
+    </div>
   );
 }

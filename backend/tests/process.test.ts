@@ -406,9 +406,10 @@ describe(
           ])
         );
 
+        // start_1 -> new_task is added by the start-connectivity repair.
         expect(
           result.process.flows
-        ).toHaveLength(1);
+        ).toHaveLength(2);
       }
     );
 

@@ -1,0 +1,119 @@
+{
+  "id": "process_main",
+  "name": "Auftragserfassung",
+  "status": "eliciting",
+  "participants": [
+    {
+      "id": "Participant_Kunde",
+      "name": "Kunde",
+      "type": "external",
+      "processVisibility": "black_box"
+    },
+    {
+      "id": "participant_internal",
+      "name": "Eigenes Unternehmen",
+      "type": "internal",
+      "processVisibility": "white_box"
+    }
+  ],
+  "lanes": [
+    {
+      "id": "Lane_Auftragssachbearbeitung",
+      "participantId": "participant_internal",
+      "name": "Auftragssachbearbeitung",
+      "type": "department"
+    },
+    {
+      "id": "Lane_Buchhaltung",
+      "participantId": "participant_internal",
+      "name": "Buchhaltung",
+      "type": "department"
+    }
+  ],
+  "elements": [
+    {
+      "id": "start_1",
+      "type": "start",
+      "name": "Kundenbestellung per E-Mail eingegangen",
+      "participantId": "participant_internal",
+      "laneId": "Lane_Auftragssachbearbeitung"
+    },
+    {
+      "id": "Task_BestellungOeffnen",
+      "type": "task",
+      "name": "Bestellung in SAP öffnen",
+      "participantId": "participant_internal",
+      "laneId": "Lane_Auftragssachbearbeitung",
+      "executionType": "human"
+    },
+    {
+      "id": "Task_KundendatenPruefen",
+      "type": "task",
+      "name": "Kundendaten prüfen",
+      "participantId": "participant_internal",
+      "laneId": "Lane_Auftragssachbearbeitung",
+      "executionType": "human"
+    },
+    {
+      "id": "Task_PreiseKorrigieren",
+      "type": "task",
+      "name": "Preise manuell korrigieren",
+      "participantId": "participant_internal",
+      "laneId": "Lane_Buchhaltung",
+      "executionType": "human"
+    },
+    {
+      "id": "Task_BestellungFreigeben",
+      "type": "task",
+      "name": "Bestellung in SAP freigeben",
+      "participantId": "participant_internal",
+      "laneId": "Lane_Auftragssachbearbeitung",
+      "executionType": "human"
+    },
+    {
+      "id": "end_1",
+      "type": "end",
+      "name": "Bestellung erfasst und freigegeben",
+      "participantId": "participant_internal",
+      "laneId": "Lane_Auftragssachbearbeitung"
+    }
+  ],
+  "flows": [
+    {
+      "id": "Flow_Start_Oeffnen",
+      "from": "start_1",
+      "to": "Task_BestellungOeffnen"
+    },
+    {
+      "id": "Flow_Oeffnen_Pruefen",
+      "from": "Task_BestellungOeffnen",
+      "to": "Task_KundendatenPruefen"
+    },
+    {
+      "id": "Flow_Pruefen_Preise",
+      "from": "Task_KundendatenPruefen",
+      "to": "Task_PreiseKorrigieren"
+    },
+    {
+      "id": "Flow_Preise_Freigeben",
+      "from": "Task_PreiseKorrigieren",
+      "to": "Task_BestellungFreigeben"
+    },
+    {
+      "id": "Flow_Freigeben_Ende",
+      "from": "Task_BestellungFreigeben",
+      "to": "end_1"
+    }
+  ],
+  "messageFlows": [
+    {
+      "id": "MessageFlow_Bestellung",
+      "fromParticipantId": "Participant_Kunde",
+      "toParticipantId": "participant_internal",
+      "targetElementId": "start_1",
+      "name": "Bestellung senden"
+    }
+  ],
+  "workarounds": [],
+  "updatedAt": "2026-08-24T11:34:32.186Z"
+}

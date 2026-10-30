@@ -9,3 +9,6 @@ Daten nach Excel exportieren
 Preise manuell korrigieren
      ↓
 Daten wieder in SAP übertragen
+
+
+Wenn ein Kunde eine Bestellung per E-Mail schickt, geht sie bei uns in der Auftragssachbearbeitung ein. Ich öffne die Bestellung dort in SAP und prüfe die Kundendaten. Danach exportiere ich die Daten nach Excel. Die Buchhaltung korrigiert anschließend die Preise manuell in Excel. Danach bekomme ich die korrigierten Daten zurück und übertrage sie in der Auftragssachbearbeitung wieder in SAP, weil die Preise in SAP nicht direkt geändert werden können.

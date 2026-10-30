@@ -26,28 +26,10 @@ export type Participant = {
 
   name: string;
 
-  /**
-   * internal:
-   * Own organization / internal organizational participant.
-   *
-   * external:
-   * Customer, supplier, authority, partner, etc.
-   *
-   * system:
-   * Only when a system is explicitly modeled as
-   * an independent BPMN participant.
-   */
   type: ParticipantType;
 
-  /**
-   * white_box:
-   * Internal process behavior is modeled.
-   *
-   * black_box:
-   * Only the participant itself and its interactions
-   * with other participants are modeled.
-   */
-  processVisibility: ProcessVisibility;
+  processVisibility:
+    ProcessVisibility;
 };
 
 export type ParticipantDraft = {
@@ -57,7 +39,8 @@ export type ParticipantDraft = {
 
   type: ParticipantType;
 
-  processVisibility: ProcessVisibility;
+  processVisibility:
+    ProcessVisibility;
 };
 
 export type ParticipantUpdate = {
@@ -67,7 +50,8 @@ export type ParticipantUpdate = {
 
   type?: ParticipantType;
 
-  processVisibility?: ProcessVisibility;
+  processVisibility?:
+    ProcessVisibility;
 };
 
 
@@ -84,9 +68,6 @@ export type LaneType =
 export type Lane = {
   id: string;
 
-  /**
-   * Participant / pool this lane belongs to.
-   */
   participantId: string;
 
   name: string;
@@ -97,9 +78,6 @@ export type Lane = {
 export type LaneDraft = {
   tempRef: string;
 
-  /**
-   * Existing participant ID or temporary participant ref.
-   */
   participantRef: string;
 
   name: string;
@@ -131,7 +109,21 @@ export type ExecutionType =
 
 
 // ======================================================
-// WORKAROUNDS
+// LEGACY WORKAROUNDS
+// ======================================================
+//
+// These structures remain temporarily because parts of
+// the existing application still reference them.
+//
+// New deviation detection should NOT use them as its
+// source of truth.
+//
+// New architecture:
+//
+// Conformance
+// -> DeviationCandidate
+// -> DeviationInvestigation
+// -> OwnerReview
 // ======================================================
 
 export type WorkaroundCategory =
@@ -158,61 +150,85 @@ export type WorkaroundStatus =
 export type WorkaroundCandidate = {
   id: string;
 
-  relatedActivityIds: string[];
+  relatedActivityIds:
+    string[];
 
-  actualPractice: string;
+  actualPractice:
+    string;
 
-  expectedPractice?: string;
+  expectedPractice?:
+    string;
 
-  obstacleOrMisfit?: string;
+  obstacleOrMisfit?:
+    string;
 
-  goalOrMotivation?: string;
+  goalOrMotivation?:
+    string;
 
-  category?: WorkaroundCategory;
+  category?:
+    WorkaroundCategory;
 
-  frequency?: string;
+  frequency?:
+    string;
 
-  logVisibility: WorkaroundLogVisibility;
+  logVisibility:
+    WorkaroundLogVisibility;
 
-  status: WorkaroundStatus;
+  status:
+    WorkaroundStatus;
 
-  evidenceMessageIds: string[];
+  evidenceMessageIds:
+    string[];
 };
 
 export type WorkaroundCandidateDraft = {
   tempRef: string;
 
-  relatedActivityRefs: string[];
+  relatedActivityRefs:
+    string[];
 
-  actualPractice: string;
+  actualPractice:
+    string;
 
-  obstacleOrMisfit?: string;
+  obstacleOrMisfit?:
+    string;
 
-  category?: WorkaroundCategory;
+  category?:
+    WorkaroundCategory;
 };
 
 export type WorkaroundCandidateUpdate = {
   id: string;
 
-  relatedActivityIds?: string[];
+  relatedActivityIds?:
+    string[];
 
-  actualPractice?: string;
+  actualPractice?:
+    string;
 
-  expectedPractice?: string;
+  expectedPractice?:
+    string;
 
-  obstacleOrMisfit?: string;
+  obstacleOrMisfit?:
+    string;
 
-  goalOrMotivation?: string;
+  goalOrMotivation?:
+    string;
 
-  category?: WorkaroundCategory;
+  category?:
+    WorkaroundCategory;
 
-  frequency?: string;
+  frequency?:
+    string;
 
-  logVisibility?: WorkaroundLogVisibility;
+  logVisibility?:
+    WorkaroundLogVisibility;
 
-  status?: WorkaroundStatus;
+  status?:
+    WorkaroundStatus;
 
-  evidenceMessageIds?: string[];
+  evidenceMessageIds?:
+    string[];
 };
 
 
@@ -225,81 +241,105 @@ type ProcessElementBase = {
 
   name: string;
 
-  /**
-   * Pool / participant in which this BPMN node exists.
-   *
-   * Optional because this information may still be
-   * unknown during process elicitation.
-   */
-  participantId?: string;
+  participantId?:
+    string;
 
-  /**
-   * Lane responsible for the activity / event / gateway.
-   *
-   * Optional until responsibility has been elicited.
-   */
-  laneId?: string;
+  laneId?:
+    string;
 };
+
+export type BpmnEventDefinitionType =
+  | "message"
+  | "timer"
+  | "error"
+  | "escalation"
+  | "conditional"
+  | "link"
+  | "signal"
+  | "cancel"
+  | "compensation"
+  | "terminate"
+  | "multiple"
+  | "parallelMultiple";
 
 export type ProcessElement =
   | (
       ProcessElementBase & {
         type: "start";
+
+        eventDefinitionType?:
+          BpmnEventDefinitionType;
       }
     )
   | (
       ProcessElementBase & {
         type: "task";
 
-        /**
-         * Human role or actor performing the activity.
-         *
-         * Example:
-         * "Order clerk"
-         */
-        performer?: string;
+        performer?:
+          string;
 
-        /**
-         * Tool / IT system used for the activity.
-         *
-         * Example:
-         * SAP, Excel
-         */
-        system?: string;
+        system?:
+          string;
 
-        /**
-         * Distinguishes human work from autonomous
-         * system execution.
-         */
-        executionType?: ExecutionType;
+        executionType?:
+          ExecutionType;
 
-        employeeConfirmed?: boolean;
+        employeeConfirmed?:
+          boolean;
 
         // ----------------------------------------------
-        // Legacy task-level workaround fields
-        // ----------------------------------------------
-        //
-        // process.workarounds remains the preferred
-        // workaround source of truth.
+        // Legacy workaround fields
         // ----------------------------------------------
 
-        workaroundCandidate?: boolean;
+        workaroundCandidate?:
+          boolean;
 
-        workaroundConfirmed?: boolean;
+        workaroundConfirmed?:
+          boolean;
 
-        workaroundReason?: string;
+        workaroundReason?:
+          string;
 
-        workaroundCategory?: WorkaroundCategory;
+        workaroundCategory?:
+          WorkaroundCategory;
       }
     )
   | (
       ProcessElementBase & {
-        type: "exclusiveGateway";
+        type:
+          "exclusiveGateway";
+      }
+    )
+  | (
+      ProcessElementBase & {
+        type:
+          | "intermediateCatchEvent"
+          | "intermediateThrowEvent";
+
+        eventDefinitionType?:
+          BpmnEventDefinitionType;
+      }
+    )
+  | (
+      ProcessElementBase & {
+        type: "boundaryEvent";
+
+        attachedToRef:
+          string;
+
+        cancelActivity:
+          boolean;
+
+        eventDefinitionType?:
+          BpmnEventDefinitionType;
       }
     )
   | (
       ProcessElementBase & {
         type: "end";
+
+        eventDefinitionType?:
+          BpmnEventDefinitionType;
       }
     );
 
@@ -317,35 +357,51 @@ export type ProcessElementDraft = {
     | "start"
     | "task"
     | "exclusiveGateway"
+    | "intermediateCatchEvent"
+    | "intermediateThrowEvent"
+    | "boundaryEvent"
     | "end";
 
   name: string;
 
-  /**
-   * Existing participant ID or temporary participant ref.
-   */
-  participantRef?: string;
+  eventDefinitionType?:
+    BpmnEventDefinitionType;
 
-  /**
-   * Existing lane ID or temporary lane ref.
-   */
-  laneRef?: string;
+  attachedToRef?:
+    string | null;
 
-  performer?: string;
+  cancelActivity?:
+    boolean | null;
 
-  system?: string;
+  participantRef?:
+    string;
 
-  executionType?: ExecutionType;
+  laneRef?:
+    string;
 
-  employeeConfirmed?: boolean;
+  performer?:
+    string;
 
-  workaroundCandidate?: boolean;
+  system?:
+    string;
 
-  workaroundConfirmed?: boolean;
+  executionType?:
+    ExecutionType;
 
-  workaroundReason?: string;
+  employeeConfirmed?:
+    boolean;
 
-  workaroundCategory?: WorkaroundCategory;
+  workaroundCandidate?:
+    boolean;
+
+  workaroundConfirmed?:
+    boolean;
+
+  workaroundReason?:
+    string;
+
+  workaroundCategory?:
+    WorkaroundCategory;
 };
 
 
@@ -358,44 +414,55 @@ export type ProcessElementUpdate = {
 
   name?: string;
 
-  /**
-   * Stable participant/lane IDs.
-   */
-  participantId?: string;
+  eventDefinitionType?:
+    BpmnEventDefinitionType | null;
 
-  laneId?: string;
+  attachedToRef?:
+    string | null;
 
-  /**
-   * Used when participant/lane was created in
-   * the same ProcessChanges response.
-   */
-  participantRef?: string;
+  cancelActivity?:
+    boolean | null;
 
-  laneRef?: string;
+  participantId?:
+    string;
 
-  performer?: string;
+  laneId?:
+    string;
 
-  system?: string;
+  participantRef?:
+    string;
 
-  executionType?: ExecutionType;
+  laneRef?:
+    string;
 
-  employeeConfirmed?: boolean;
+  performer?:
+    string;
 
-  workaroundCandidate?: boolean;
+  system?:
+    string;
 
-  workaroundConfirmed?: boolean;
+  executionType?:
+    ExecutionType;
 
-  workaroundReason?: string;
+  employeeConfirmed?:
+    boolean;
 
-  workaroundCategory?: WorkaroundCategory;
+  workaroundCandidate?:
+    boolean;
+
+  workaroundConfirmed?:
+    boolean;
+
+  workaroundReason?:
+    string;
+
+  workaroundCategory?:
+    WorkaroundCategory;
 };
 
 
 // ======================================================
 // SEQUENCE FLOWS
-// ======================================================
-//
-// SequenceFlow is used inside one BPMN participant.
 // ======================================================
 
 export type SequenceFlow = {
@@ -405,7 +472,8 @@ export type SequenceFlow = {
 
   to: string;
 
-  condition?: string;
+  condition?:
+    string;
 };
 
 export type SequenceFlowDraft = {
@@ -426,26 +494,21 @@ export type SequenceFlowDraft = {
 // ======================================================
 // MESSAGE FLOWS
 // ======================================================
-//
-// MessageFlow is used between different BPMN participants.
-// ======================================================
 
 export type MessageFlow = {
   id: string;
 
-  fromParticipantId: string;
+  fromParticipantId:
+    string;
 
-  toParticipantId: string;
+  toParticipantId:
+    string;
 
-  /**
-   * Optional concrete BPMN source/target nodes.
-   *
-   * Example:
-   * task_send_order -> participant_supplier
-   */
-  sourceElementId?: string;
+  sourceElementId?:
+    string;
 
-  targetElementId?: string;
+  targetElementId?:
+    string;
 
   name?: string;
 };
@@ -455,19 +518,17 @@ export type MessageFlowDraft = {
 
   tempRef?: string;
 
-  /**
-   * Existing participant IDs or temporary refs.
-   */
-  fromParticipantRef: string;
+  fromParticipantRef:
+    string;
 
-  toParticipantRef: string;
+  toParticipantRef:
+    string;
 
-  /**
-   * Existing element IDs or temporary refs.
-   */
-  sourceElementRef?: string;
+  sourceElementRef?:
+    string;
 
-  targetElementRef?: string;
+  targetElementRef?:
+    string;
 
   name?: string;
 };
@@ -476,38 +537,42 @@ export type MessageFlowDraft = {
 // ======================================================
 // PROCESS MODEL
 // ======================================================
+//
+// Employee-described actual AS-IS process.
+//
+// Reference processes are stored separately.
+// ======================================================
 
 export type ProcessModel = {
   id: string;
 
   name: string;
 
-  status: ProcessStatus;
+  status:
+    ProcessStatus;
+
+  participants:
+    Participant[];
+
+  lanes:
+    Lane[];
+
+  elements:
+    ProcessElement[];
+
+  flows:
+    SequenceFlow[];
+
+  messageFlows:
+    MessageFlow[];
 
   /**
-   * BPMN pools / participants.
+   * Legacy.
+   *
+   * New conformance detection should not depend on this.
    */
-  participants: Participant[];
-
-  /**
-   * Roles, departments, teams or system lanes
-   * inside participants.
-   */
-  lanes: Lane[];
-
-  elements: ProcessElement[];
-
-  /**
-   * Control flow inside a participant.
-   */
-  flows: SequenceFlow[];
-
-  /**
-   * Communication between participants.
-   */
-  messageFlows: MessageFlow[];
-
-  workarounds: WorkaroundCandidate[];
+  workarounds:
+    WorkaroundCandidate[];
 
   updatedAt: string;
 };
@@ -519,58 +584,73 @@ export type ProcessModel = {
 
 export type ProcessChanges = {
   // ----------------------------------------------------
-  // Participants / Pools
+  // Participants
   // ----------------------------------------------------
 
-  addParticipants: ParticipantDraft[];
+  addParticipants:
+    ParticipantDraft[];
 
-  updateParticipants: ParticipantUpdate[];
+  updateParticipants:
+    ParticipantUpdate[];
 
-  removeParticipantIds: string[];
+  removeParticipantIds:
+    string[];
 
   // ----------------------------------------------------
   // Lanes
   // ----------------------------------------------------
 
-  addLanes: LaneDraft[];
+  addLanes:
+    LaneDraft[];
 
-  updateLanes: LaneUpdate[];
+  updateLanes:
+    LaneUpdate[];
 
-  removeLaneIds: string[];
+  removeLaneIds:
+    string[];
 
   // ----------------------------------------------------
-  // Process Elements
+  // Elements
   // ----------------------------------------------------
 
-  addElements: ProcessElementDraft[];
+  addElements:
+    ProcessElementDraft[];
 
-  updateElements: ProcessElementUpdate[];
+  updateElements:
+    ProcessElementUpdate[];
 
-  removeElementIds: string[];
+  removeElementIds:
+    string[];
 
   // ----------------------------------------------------
   // Sequence Flows
   // ----------------------------------------------------
 
-  addFlows: SequenceFlowDraft[];
+  addFlows:
+    SequenceFlowDraft[];
 
-  removeFlowIds: string[];
+  removeFlowIds:
+    string[];
 
   // ----------------------------------------------------
   // Message Flows
   // ----------------------------------------------------
 
-  addMessageFlows: MessageFlowDraft[];
+  addMessageFlows:
+    MessageFlowDraft[];
 
-  removeMessageFlowIds: string[];
+  removeMessageFlowIds:
+    string[];
 
   // ----------------------------------------------------
-  // Workarounds
+  // Legacy Workaround Changes
   // ----------------------------------------------------
 
-  addWorkarounds: WorkaroundCandidateDraft[];
+  addWorkarounds:
+    WorkaroundCandidateDraft[];
 
-  updateWorkarounds: WorkaroundCandidateUpdate[];
+  updateWorkarounds:
+    WorkaroundCandidateUpdate[];
 };
 
 
@@ -604,96 +684,1053 @@ export type ElicitationPhase =
   | "complete";
 
 export type PendingQuestionKind =
+  // ----------------------------------------------------
+  // Process identification
+  // ----------------------------------------------------
+
+  | "process_scope"
+  | "process_disambiguation"
+
+  // ----------------------------------------------------
+  // General process elicitation
+  // ----------------------------------------------------
+
   | "clarification"
   | "element_confirmation"
   | "sequence_confirmation"
 
+  // ----------------------------------------------------
   // Organizational elicitation
+  // ----------------------------------------------------
+
   | "participant_boundary"
   | "actor_role"
   | "lane_assignment"
   | "handoff_target"
 
-  // Workaround elicitation
+  // ----------------------------------------------------
+  // Legacy workaround elicitation
+  // ----------------------------------------------------
+
   | "workaround_expected_practice"
   | "workaround_obstacle"
   | "workaround_goal"
   | "workaround_frequency"
   | "workaround_log_visibility"
-  | "workaround_confirmation";
+  | "workaround_confirmation"
+
+  // ----------------------------------------------------
+  // Neutral deviation investigation
+  // ----------------------------------------------------
+
+  | "practice_reason"
+  | "practice_since"
+  | "practice_frequency"
+  | "expected_practice";
+
+
+// ======================================================
+// INVESTIGATION FACTS
+// ======================================================
+
+export type InvestigationFacts = {
+  reason?:
+    string;
+
+  sinceWhen?:
+    string;
+
+  frequency?:
+    string;
+
+  expectedPractice?:
+    string;
+
+  goalOrMotivation?:
+    string;
+
+  awareness?:
+    string;
+
+  documented?:
+    boolean;
+
+  approved?:
+    boolean;
+
+  consequenceWithoutPractice?:
+    string;
+};
+
+export type InvestigationField =
+  keyof InvestigationFacts;
+
+
+// ======================================================
+// PENDING QUESTION
+// ======================================================
 
 export type PendingQuestion = {
   id: string;
 
-  kind: PendingQuestionKind;
+  kind:
+    PendingQuestionKind;
 
-  targetIds: string[];
+  targetIds:
+    string[];
 
-  field?: string;
+  field?:
+    string;
 
-  question: string;
+  question:
+    string;
+
+  /**
+   * Present when the employee is currently answering a
+   * neutral investigation question.
+   */
+  investigationId?:
+    string;
+
+  investigationField?:
+    InvestigationField;
 };
 
 
 // ======================================================
-// INTERVIEW SESSION
+// PROCESS IDENTIFICATION
+// ======================================================
+//
+// Hidden from the Employee UI.
+//
+// The Process Owner may inspect these fields.
+// ======================================================
+
+export type ProcessIdentificationStatus =
+  | "unresolved"
+  | "probable"
+  | "selected";
+
+
+// ======================================================
+// PROCESS CANDIDATE SCORE
+// ======================================================
+
+export type ProcessCandidateScore = {
+  nameSimilarity:
+    number;
+
+  activitySimilarity:
+    number;
+
+  systemSimilarity:
+    number;
+
+  laneSimilarity:
+    number;
+
+  structureSimilarity:
+    number;
+
+  /**
+   * Heuristic candidate ranking score.
+   *
+   * This is NOT conformance fitness.
+   */
+  combinedScore:
+    number;
+};
+
+
+// ======================================================
+// PROCESS CANDIDATE
+// ======================================================
+
+export type ProcessCandidate = {
+  referenceProcessId:
+    string;
+
+  referenceProcessVersion:
+    number;
+
+  name:
+    string;
+
+  score:
+    ProcessCandidateScore;
+
+  matchedActualActivityIds?:
+    string[];
+
+  matchedReferenceActivityIds?:
+    string[];
+};
+
+
+// ======================================================
+// PROCESS IDENTIFICATION HISTORY
+// ======================================================
+
+export type ProcessIdentificationDecisionReason =
+  | "initial_name_match"
+  | "activity_evidence"
+  | "conformance_evidence"
+  | "owner_override"
+  | "selection_revised";
+
+export type ProcessIdentificationDecision = {
+  timestamp:
+    string;
+
+  activityCount:
+    number;
+
+  candidates:
+    ProcessCandidate[];
+
+  selectedReferenceProcessId?:
+    string;
+
+  selectedReferenceProcessVersion?:
+    number;
+
+  reason:
+    ProcessIdentificationDecisionReason;
+};
+
+
+// ======================================================
+// CURRENT PROCESS IDENTIFICATION
+// ======================================================
+
+export type ProcessIdentification = {
+  status:
+    ProcessIdentificationStatus;
+
+  /**
+   * Initial wording provided by the employee.
+   *
+   * Example:
+   * "Auftragserfassung"
+   */
+  declaredProcessName?:
+    string;
+
+  /**
+   * Current ranked candidate set.
+   */
+  candidates:
+    ProcessCandidate[];
+
+  /**
+   * Currently selected reference process.
+   */
+  selectedReferenceProcessId?:
+    string;
+
+  /**
+   * Exact reference-process version used by conformance.
+   */
+  selectedReferenceProcessVersion?:
+    number;
+
+  selectedReferenceModelHash?:
+    string;
+
+  selectedBy?:
+    | "automatic"
+    | "owner";
+
+  /**
+   * Owner selection cannot be automatically overwritten.
+   */
+  lockedByOwner:
+    boolean;
+
+  /**
+   * Whether automatic identification is considered
+   * sufficiently stable.
+   */
+  stable:
+    boolean;
+
+  /**
+   * Current identification confidence.
+   *
+   * 0..1
+   */
+  confidence:
+    number;
+
+  /**
+   * Difference between best and second-best candidate.
+   */
+  marginToSecondCandidate:
+    number;
+
+  selectedAtActivityCount?:
+    number;
+
+  revisionCount:
+    number;
+
+  lastEvaluatedAt?:
+    string;
+
+  history:
+    ProcessIdentificationDecision[];
+};
+
+
+// ======================================================
+// ACTIVITY MAPPING
+// ======================================================
+//
+// Maps employee AS-IS activities to reference-process
+// activities.
+// ======================================================
+
+export type ActivityMappingMethod =
+  | "exact"
+  | "normalized"
+  | "alias"
+  | "token_similarity"
+  | "unmatched";
+
+export type ActivityMapping = {
+  actualActivityId:
+    string;
+
+  actualLabel:
+    string;
+
+  referenceProcessId:
+    string;
+
+  referenceProcessVersion:
+    number;
+
+  referenceActivityId?:
+    string;
+
+  referenceLabel?:
+    string;
+
+  /**
+   * Mapping confidence.
+   *
+   * 0..1
+   */
+  confidence:
+    number;
+
+  method:
+    ActivityMappingMethod;
+};
+
+
+// ======================================================
+// CONFORMANCE
+// ======================================================
+
+export type ConformanceMethod =
+  | "prefix_tbr"
+  | "alignment";
+
+export type AlignmentMoveType =
+  | "synchronous"
+  | "log_move"
+  | "model_move";
+
+export type DeviationMoveType =
+  | "log_move"
+  | "model_move";
+
+export type ConformanceMove = {
+  type:
+    AlignmentMoveType;
+
+  actualActivityId?:
+    string;
+
+  actualLabel?:
+    string;
+
+  referenceActivityId?:
+    string;
+
+  referenceLabel?:
+    string;
+};
+
+export type ConformanceRun = {
+  id: string;
+
+  referenceProcessId:
+    string;
+
+  referenceProcessVersion:
+    number;
+
+  traceActivityIds:
+    string[];
+
+  method:
+    ConformanceMethod;
+
+  /**
+   * false while the employee is still describing the
+   * process.
+   */
+  complete:
+    boolean;
+
+  /**
+   * 0..1
+   */
+  fitness:
+    number;
+
+  conformant:
+    boolean;
+
+  /**
+   * May be empty for simple prefix replay.
+   */
+  moves:
+    ConformanceMove[];
+
+  createdAt:
+    string;
+};
+
+
+// ======================================================
+// DEVIATIONS
+// ======================================================
+//
+// Deviation != Workaround.
+//
+// A deviation is a technical conformance result.
+//
+// Only the Process Owner classifies whether it is a
+// workaround.
+// ======================================================
+
+export type DeviationDimension =
+  | "control_flow"
+  | "lane"
+  | "participant"
+  | "system"
+  | "message_flow";
+
+export type DeviationDetectionMethod =
+  | "prefix_tbr"
+  | "alignment"
+  | "perspective_check";
+
+export type DeviationStatus =
+  | "open"
+  | "information_complete"
+  | "reviewed";
+
+export type DeviationCandidate = {
+  id: string;
+
+  referenceProcessId:
+    string;
+
+  /**
+   * Exact reference version against which the
+   * deviation was detected.
+   */
+  referenceProcessVersion:
+    number;
+
+  /**
+   * Conformance run that produced the finding.
+   */
+  sourceConformanceRunId:
+    string;
+
+  detectionMethod:
+    DeviationDetectionMethod;
+
+  /**
+   * true while this is still a preliminary finding
+   * during an incomplete interview.
+   */
+  provisional:
+    boolean;
+
+  dimension:
+    DeviationDimension;
+
+  moveType?:
+    DeviationMoveType;
+
+  actualActivityIds:
+    string[];
+
+  expectedReferenceActivityIds:
+    string[];
+
+  description:
+    string;
+
+  firstDetectedAt:
+    string;
+
+  status:
+    DeviationStatus;
+};
+
+
+// ======================================================
+// DEVIATION INVESTIGATION
+// ======================================================
+
+export type DeviationInvestigation = {
+  id: string;
+
+  deviationId:
+    string;
+
+  facts:
+    InvestigationFacts;
+
+  missingFields:
+    InvestigationField[];
+
+  status:
+    | "open"
+    | "complete";
+};
+
+
+// ======================================================
+// OWNER REVIEW
+// ======================================================
+
+export type OwnerReviewDecision =
+  | "confirmed_workaround"
+  | "accepted_variant"
+  | "model_outdated"
+  | "not_a_workaround"
+  | "needs_information";
+
+export type OwnerReview = {
+  id: string;
+
+  deviationId:
+    string;
+
+  decision:
+    OwnerReviewDecision;
+
+  comment?:
+    string;
+
+  reviewedAt:
+    string;
+};
+
+
+// ======================================================
+// COMPLETE INTERNAL SESSION ANALYSIS
+// ======================================================
+//
+// Employee APIs must not expose this structure.
+//
+// Owner APIs may expose it.
+// ======================================================
+
+export type PracticeField =
+  | "reason"
+  | "sinceWhen"
+  | "frequency";
+
+export type PracticeEvidence = {
+  id: string;
+  messageId?: string;
+  excerpt: string;
+  recordedAt: string;
+};
+
+export type PracticeFact = {
+  status: "answered" | "unknown";
+  value?: string;
+  scope: "practice" | "activities";
+  activityIds: string[];
+  evidenceId: string;
+  recordedAt: string;
+};
+
+export type PracticeCandidate = {
+  id: string;
+  deviationIds: string[];
+  activityIds: string[];
+  facts: Partial<Record<PracticeField, PracticeFact>>;
+  activityFacts: Array<PracticeFact & { field: PracticeField }>;
+  evidence: PracticeEvidence[];
+  groupingBasis: PracticeEvidence[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SessionAnalysis = {
+  processIdentification:
+    ProcessIdentification;
+
+  activityMappings:
+    ActivityMapping[];
+
+  conformanceRuns:
+    ConformanceRun[];
+
+  deviations:
+    DeviationCandidate[];
+
+  investigations:
+    DeviationInvestigation[];
+
+  practices:
+    PracticeCandidate[];
+
+  ownerReviews:
+    OwnerReview[];
+};
+
+
+// ======================================================
+// INTERNAL / GENERIC INTERVIEW SESSION
+// ======================================================
+//
+// This type is rarely needed by the employee frontend.
+// EmployeeSessionView / OwnerSessionView are preferred.
 // ======================================================
 
 export type InterviewSession = {
   id: string;
 
-  messages: ChatMessage[];
+  messages:
+    ChatMessage[];
 
-  process: ProcessModel;
+  process:
+    ProcessModel;
 
-  elicitationPhase: ElicitationPhase;
+  analysis:
+    SessionAnalysis;
 
-  pendingQuestion?: PendingQuestion;
+  elicitationPhase:
+    ElicitationPhase;
 
-  lastFocusedElementIds: string[];
+  pendingQuestion?:
+    PendingQuestion;
 
-  unresolvedProcessItems: string[];
+  lastFocusedElementIds:
+    string[];
 
-  createdAt: string;
+  unresolvedProcessItems:
+    string[];
+
+  createdAt:
+    string;
+
+  updatedAt:
+    string;
+};
+
+
+// ======================================================
+// EMPLOYEE PROCESS VIEW
+// ======================================================
+//
+// Employee must not receive workaround metadata.
+// ======================================================
+
+type FrontendProcessTask =
+  Extract<
+    ProcessElement,
+    { type: "task" }
+  >;
+
+export type EmployeeTask =
+  Omit<
+    FrontendProcessTask,
+    | "workaroundCandidate"
+    | "workaroundConfirmed"
+    | "workaroundReason"
+    | "workaroundCategory"
+  >;
+
+export type EmployeeProcessElement =
+  | Exclude<
+      ProcessElement,
+      FrontendProcessTask
+    >
+  | EmployeeTask;
+
+export type EmployeeProcessView = {
+  id: string;
+
+  name: string;
+
+  status:
+    | "eliciting"
+    | "complete";
+
+  participants:
+    Participant[];
+
+  lanes:
+    Lane[];
+
+  elements:
+    EmployeeProcessElement[];
+
+  flows:
+    SequenceFlow[];
+
+  messageFlows:
+    MessageFlow[];
 
   updatedAt: string;
+};
+
+
+// ======================================================
+// EMPLOYEE SESSION VIEW
+// ======================================================
+//
+// This is the sanitized structure returned by the
+// employee endpoints.
+//
+// Important:
+//
+// No:
+// - SessionAnalysis
+// - deviations
+// - conformance runs
+// - reference process selection
+// - workarounds
+// ======================================================
+
+export type EmployeeSessionView = {
+  sessionId:
+    string;
+
+  messages:
+    ChatMessage[];
+
+  process:
+    EmployeeProcessView;
+
+  elicitationPhase:
+    ElicitationPhase;
+
+  pendingQuestion?:
+    PendingQuestion;
+
+  createdAt:
+    string;
+
+  updatedAt:
+    string;
+
+  bpmnXml:
+    string;
+};
+
+
+// ======================================================
+// EMPLOYEE POST MESSAGE RESPONSE
+// ======================================================
+//
+// Current employee message endpoint:
+//
+// POST /api/employee/sessions/:id/message
+//
+// deliberately does not return processChanges.
+// ======================================================
+
+export type EmployeePostMessageResponse = {
+  assistantMessage:
+    string;
+
+  process:
+    EmployeeProcessView;
+
+  bpmnXml:
+    string;
+};
+
+
+// ======================================================
+// EMPLOYEE PROCESS UPDATE RESPONSE
+// ======================================================
+
+export type EmployeeUpdateProcessResponse = {
+  process:
+    EmployeeProcessView;
+
+  bpmnXml:
+    string;
+};
+
+
+// ======================================================
+// OWNER SESSION VIEW
+// ======================================================
+
+export type OwnerSessionView = {
+  sessionId:
+    string;
+
+  process:
+    ProcessModel;
+
+  analysis:
+    SessionAnalysis;
+
+  messages:
+    ChatMessage[];
+
+  createdAt:
+    string;
+
+  updatedAt:
+    string;
+
+  bpmnXml:
+    string;
+};
+
+
+// ======================================================
+// REFERENCE PROCESSES
+// ======================================================
+//
+// Owner-managed reference / target processes.
+// ======================================================
+
+export type ReferenceProcessMetadata = {
+  id:
+    string;
 
   /**
-   * Added to the frontend API representation.
-   *
-   * The backend session itself does not necessarily
-   * persist this field.
+   * Owner-defined display name.
    */
-  bpmnXml: string;
+  name:
+    string;
+
+  aliases:
+    string[];
+
+  description?:
+    string;
+
+  active:
+    boolean;
+
+  currentVersion:
+    number;
+
+  createdAt:
+    string;
+
+  updatedAt:
+    string;
+};
+
+export type ReferenceProcessVersion = {
+  referenceProcessId:
+    string;
+
+  version:
+    number;
+
+  modelHash:
+    string;
+
+  process:
+    ProcessModel;
+
+  bpmnXml:
+    string;
+
+  createdAt:
+    string;
+};
+
+export type ReferenceProcessRecord = {
+  metadata:
+    ReferenceProcessMetadata;
+
+  currentVersion:
+    ReferenceProcessVersion;
+};
+
+export type ReferenceProcessSummary = {
+  id:
+    string;
+
+  name:
+    string;
+
+  aliases:
+    string[];
+
+  description?:
+    string;
+
+  active:
+    boolean;
+
+  currentVersion:
+    number;
+
+  updatedAt:
+    string;
+
+  /**
+   * Optional aggregation from the Owner API.
+   */
+  assignedSessionCount?:
+    number;
+
+  /**
+   * Optional aggregation from the Owner API.
+   */
+  openDeviationCount?:
+    number;
 };
 
 
 // ======================================================
-// POST MESSAGE RESPONSE
+// REFERENCE PROCESS OVERVIEW
 // ======================================================
 
-export type PostMessageResponse = {
-  assistantMessage: string;
+export type ReferenceProcessOverviewSession = {
+  sessionId:
+    string;
 
-  process: ProcessModel;
+  processName:
+    string;
 
-  processChanges: ProcessChanges;
+  referenceProcessVersion?:
+    number;
 
-  bpmnXml: string;
+  identificationStatus:
+    ProcessIdentificationStatus;
+
+  identificationConfidence:
+    number;
+
+  deviationCount:
+    number;
+
+  openDeviationCount:
+    number;
+
+  updatedAt:
+    string;
+};
+
+export type ReferenceProcessOverviewData = {
+  referenceProcessId:
+    string;
+
+  name:
+    string;
+
+  currentVersion:
+    number;
+
+  active:
+    boolean;
+
+  sessionCount:
+    number;
+
+  openDeviationCount:
+    number;
+
+  sessions:
+    ReferenceProcessOverviewSession[];
 };
 
 
 // ======================================================
-// MANUAL PROCESS UPDATE RESPONSE
+// OWNER SESSION SUMMARY
 // ======================================================
 //
 // Used by:
 //
-// PUT /api/sessions/:id/process
+// GET /api/owner/sessions
 // ======================================================
 
-export type UpdateProcessResponse = {
-  process: ProcessModel;
+export type OwnerSessionSummary = {
+  sessionId:
+    string;
 
-  bpmnXml: string;
+  processName:
+    string;
+
+  updatedAt:
+    string;
+
+  identificationStatus:
+    ProcessIdentificationStatus;
+
+  selectedReferenceProcessId?:
+    string;
+
+  selectedReferenceProcessVersion?:
+    number;
+
+  identificationConfidence:
+    number;
+
+  deviationCount:
+    number;
+
+  openDeviationCount:
+    number;
+};
+
+
+// ======================================================
+// LEGACY RESPONSE TYPES
+// ======================================================
+//
+// Keep these temporarily only if older frontend code
+// still imports them.
+//
+// New EmployeeView should use:
+//
+// EmployeePostMessageResponse
+// EmployeeUpdateProcessResponse
+// ======================================================
+
+export type PostMessageResponse = {
+  assistantMessage:
+    string;
+
+  process:
+    ProcessModel;
+
+  processChanges:
+    ProcessChanges;
+
+  bpmnXml:
+    string;
+};
+
+export type UpdateProcessResponse = {
+  process:
+    ProcessModel;
+
+  bpmnXml:
+    string;
 };

@@ -1,0 +1,26 @@
+{
+  "id": "process_main",
+  "name": "Production of Customized Products",
+  "status": "eliciting",
+  "participants": [
+    {
+      "id": "participant_internal",
+      "name": "Own organization",
+      "type": "internal",
+      "processVisibility": "white_box"
+    }
+  ],
+  "lanes": [],
+  "elements": [
+    {
+      "id": "start_1",
+      "type": "start",
+      "name": "Process Trigger",
+      "participantId": "participant_internal"
+    }
+  ],
+  "flows": [],
+  "messageFlows": [],
+  "workarounds": [],
+  "updatedAt": "2026-10-20T08:22:24.131Z"
+}

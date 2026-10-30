@@ -1,4 +1,10 @@
 import {
+  UNASSIGNED_LANE_ID,
+  UNASSIGNED_LANE_NAME
+} from "./lane-constants.js";
+
+import {
+  type BpmnEventDefinitionType,
   type ProcessElement,
   type ProcessModel,
   type SequenceFlow
@@ -24,6 +30,9 @@ const ELEMENT_WIDTH: Record<
   start: 36,
   task: 140,
   exclusiveGateway: 50,
+  intermediateCatchEvent: 36,
+  intermediateThrowEvent: 36,
+  boundaryEvent: 36,
   end: 36
 };
 
@@ -34,6 +43,9 @@ const ELEMENT_HEIGHT: Record<
   start: 36,
   task: 80,
   exclusiveGateway: 50,
+  intermediateCatchEvent: 36,
+  intermediateThrowEvent: 36,
+  boundaryEvent: 36,
   end: 36
 };
 
@@ -114,7 +126,46 @@ function bpmnTagForElement(
     return "bpmn:exclusiveGateway";
   }
 
+  if (
+    element.type ===
+    "intermediateCatchEvent"
+  ) {
+    return "bpmn:intermediateCatchEvent";
+  }
+
+  if (
+    element.type ===
+    "intermediateThrowEvent"
+  ) {
+    return "bpmn:intermediateThrowEvent";
+  }
+
+  if (
+    element.type ===
+    "boundaryEvent"
+  ) {
+    return "bpmn:boundaryEvent";
+  }
+
   return "bpmn:endEvent";
+}
+
+function renderEventDefinitionXml(
+  elementId: string,
+  type: BpmnEventDefinitionType | undefined
+): string {
+  if (!type) {
+    return "";
+  }
+
+  const definitionTag =
+    type === "compensation"
+      ? "compensateEventDefinition"
+      : `${type}EventDefinition`;
+
+  return `<bpmn:${definitionTag} id="${escapeXml(
+    `${elementId}_${definitionTag}`
+  )}" />`;
 }
 
 // ======================================================
@@ -127,10 +178,42 @@ function renderElementXml(
   const tag =
     bpmnTagForElement(element);
 
+  const eventDefinitionType =
+    element.type === "task" ||
+      element.type === "exclusiveGateway"
+      ? undefined
+      : element.eventDefinitionType;
+
+  const eventDefinitionXml =
+    renderEventDefinitionXml(
+      element.id,
+      eventDefinitionType
+    );
+
+  const boundaryAttributes =
+    element.type === "boundaryEvent"
+      ? ` attachedToRef="${escapeXml(
+          element.attachedToRef
+        )}" cancelActivity="${element.cancelActivity}"`
+      : "";
+
+  if (eventDefinitionXml) {
+    return [
+      `<${tag}`,
+      ` id="${escapeXml(element.id)}"`,
+      ` name="${escapeXml(element.name)}"`,
+      boundaryAttributes,
+      `>`,
+      eventDefinitionXml,
+      `</${tag}>`
+    ].join("");
+  }
+
   return [
     `<${tag}`,
     ` id="${escapeXml(element.id)}"`,
     ` name="${escapeXml(element.name)}"`,
+    boundaryAttributes,
     ` />`
   ].join("");
 }
@@ -227,6 +310,55 @@ function renderParticipantXml(
 }
 
 // ======================================================
+// LANE ROWS
+// ======================================================
+//
+// Elements without a responsibility must not be drawn inside
+// an arbitrary lane, so they get a visual-only band. The band
+// is never part of the ProcessModel.
+// ======================================================
+
+export { UNASSIGNED_LANE_ID };
+
+type LaneRow = {
+  id: string;
+  name: string;
+};
+
+function layoutLaneRows(
+  process: ProcessModel,
+  internalParticipantId: string
+): LaneRow[] {
+  const rows: LaneRow[] =
+    process.lanes
+      .filter(
+        (lane) =>
+          lane.participantId ===
+          internalParticipantId
+      )
+      .map(
+        (lane) => ({
+          id: lane.id,
+          name: lane.name
+        })
+      );
+
+  if (
+    rows.length > 0 &&
+    process.elements.some(
+      (element) => !element.laneId
+    )
+  ) {
+    rows.push({
+      id: UNASSIGNED_LANE_ID,
+      name: UNASSIGNED_LANE_NAME
+    });
+  }
+
+  return rows;
+}
+
+// ======================================================
 // LANE SET XML
 // ======================================================
 
@@ -235,10 +367,9 @@ function renderLaneSetXml(
   internalParticipantId: string
 ): string {
   const lanes =
-    process.lanes.filter(
-      (lane) =>
-        lane.participantId ===
-        internalParticipantId
+    layoutLaneRows(
+      process,
+      internalParticipantId
     );
 
   if (lanes.length === 0) {
@@ -252,7 +383,9 @@ function renderLaneSetXml(
           process.elements
             .filter(
               (element) =>
-                element.laneId === lane.id
+                lane.id === UNASSIGNED_LANE_ID
+                  ? !element.laneId
+                  : element.laneId === lane.id
             )
             .map(
               (element) =>
@@ -600,10 +733,9 @@ export function generateBpmnXml(
   );
 
   const internalLanes =
-    process.lanes.filter(
-      (lane) =>
-        lane.participantId ===
-        internalParticipantId
+    layoutLaneRows(
+      process,
+      internalParticipantId
     );
 
   const internalPoolHeight =
@@ -710,11 +842,30 @@ export function generateBpmnXml(
             element.laneId
           );
 
-        if (laneBounds) {
+        if (!laneBounds) {
+          throw new Error(
+            `Element ${element.id} references missing lane ${element.laneId}`
+          );
+        }
+
+        y =
+          laneBounds.y +
+          (
+            laneBounds.height -
+            height
+          ) /
+            2;
+      } else {
+        const bandBounds =
+          laneBoundsById.get(
+            UNASSIGNED_LANE_ID
+          );
+
+        if (bandBounds) {
           y =
-            laneBounds.y +
+            bandBounds.y +
             (
-              laneBounds.height -
+              bandBounds.height -
               height
             ) /
               2;
@@ -728,6 +879,41 @@ export function generateBpmnXml(
           y,
           width,
           height
+        }
+      );
+    }
+  );
+
+  process.elements.forEach(
+    (element) => {
+      if (element.type !== "boundaryEvent") {
+        return;
+      }
+
+      const attachedBounds =
+        elementBoundsById.get(
+          element.attachedToRef
+        );
+
+      if (!attachedBounds) {
+        return;
+      }
+
+      elementBoundsById.set(
+        element.id,
+        {
+          x:
+            attachedBounds.x +
+            attachedBounds.width -
+            ELEMENT_WIDTH.boundaryEvent / 2,
+          y:
+            attachedBounds.y +
+            attachedBounds.height -
+            ELEMENT_HEIGHT.boundaryEvent / 2,
+          width:
+            ELEMENT_WIDTH.boundaryEvent,
+          height:
+            ELEMENT_HEIGHT.boundaryEvent
         }
       );
     }
